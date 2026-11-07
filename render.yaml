@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: nakami-live
+    runtime: python
+    plan: free
+    buildCommand: pip install -r live/requirements.txt
+    startCommand: python live/server.py
+    healthCheckPath: /health
