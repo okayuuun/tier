@@ -5,7 +5,7 @@
 const app=document.getElementById('app');let ws=null,room=null,me=null,connectCode='',playerName='',pendingAction='',draft=null,connecting=false,retryTimer=null;let desiredGame='tier';
 const GAMES={tier:{title:'みんなでTier予想',icon:'🏆',desc:'人ごとに異なるお題！主役の並びを予想'},value:{title:'これって重い？',icon:'💗',desc:'本人の3段階の価値観を当てる'},either:{title:'究極の二択',icon:'⚖️',desc:'本人ならA/Bどちらを選ぶ？'},quiz:{title:'私の理解度クイズ',icon:'🎯',desc:'好みの答えを予想して理解度を競う'}};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${fn}">${esc(title)}</button>`;
+const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
 const iid=()=>{let v=new Uint8Array(20);crypto.getRandomValues(v);return Array.from(v,x=>x.toString(16).padStart(2,'0')).join('')};
 function getSid(code){let k='nakami_sid_'+code;let sid=sessionStorage.getItem(k);if(!sid){sid=iid();sessionStorage.setItem(k,sid)}return sid}
@@ -17,7 +17,7 @@ function connectNow(kind){playerName=document.getElementById('nickname').value.t
 function openSocket(){if(connecting)return;connecting=true;status('接続中…',false);if(ws&&ws.readyState===WebSocket.OPEN)ws.close();let url=(location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws';ws=new WebSocket(url);
 ws.onopen=()=>{connecting=false;status('接続中',true);let type=room||connectCode?'join':'create';let code=room?.code||connectCode;let sid=getSid(code||'creating');send({type,code,name:playerName,sid})};
 ws.onmessage=evt=>{let obj;try{obj=JSON.parse(evt.data)}catch{return}if(obj.type==='error')return error(obj.message);if(obj.type!=='state')return;room=obj.room;me=obj.me;let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));render()};
-ws.onclose=()=>{connecting=false;status('切断・再接続中',false);if(room){clearTimeout(retryTimer);retryTimer=setTimeout(openSocket,2000)}else if(connectCode){error('接続できませんでした。サーバーを確認してください')}};
+ws.onclose=()=>{connecting=false;status('切断・再接続中',false);if(room||connectCode||pendingAction){if(!room)error('接続が切れました。無料サーバーの起動中かもしれません。自動で再接続します。');clearTimeout(retryTimer);retryTimer=setTimeout(openSocket,2500)}};
 ws.onerror=()=>status('通信エラー',false);
 }
 function players(){return room.players.map(p=>`<div class="player ${p.online?'':'off'}"><strong>${esc(p.name)} ${p.id===room.owner?'👑':''} ${p.id===me?'（あなた）':''}</strong><small>${p.online?'🟢 接続中':'⚪ 切断中'} ${room.phase==='answer'?(p.answered?'・回答済み':'・未回答'):room.phase==='guess'?(p.id===room.targetId?'・主役':p.guessed?'・予想済み':'・予想中'):''}</small><div class="stars">${p.score} pt</div></div>`).join('')}
