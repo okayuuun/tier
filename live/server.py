@@ -14,21 +14,6 @@ ROOT = Path(__file__).parent
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ROOMS = {}
 MAX_PLAYERS = 12
-# Steamの遊び方に近づけ、Tier表ではプレイヤーごとに別のお題を割り当てる。
-TIER_POOL = [
-    {"title": "もらって嬉しいプレゼント", "items": ["手紙", "お菓子", "ゲーム", "服", "一緒に遊ぶ約束"]},
-    {"title": "理想の休日", "items": ["寝る", "ゲームする", "旅行する", "映画を観る", "買い物をする"]},
-    {"title": "テンションが上がる場所", "items": ["遊園地", "水族館", "カラオケ", "テーマカフェ", "温泉"]},
-    {"title": "いちばん好きな食べ物", "items": ["寿司", "ラーメン", "カレー", "焼肉", "パスタ"]},
-    {"title": "友達と一緒にするなら", "items": ["ゲーム", "映画", "スポーツ", "旅行", "料理"]},
-    {"title": "好きな季節", "items": ["春", "初夏", "真夏", "秋", "冬"]},
-    {"title": "大切にしたいもの", "items": ["自由", "安定", "仲間", "挑戦", "楽しさ"]},
-    {"title": "朝起きて最初にしたいこと", "items": ["二度寝", "朝ご飯", "SNS", "音楽", "散歩"]},
-    {"title": "一緒に出かけたいところ", "items": ["映画館", "動物園", "ショッピング", "海", "遊園地"]},
-    {"title": "いちばん嬉しい言葉", "items": ["ありがとう", "好き", "すごいね", "頼りになる", "一緒にいよう"]},
-    {"title": "最も疲れがとれること", "items": ["睡眠", "ゲーム", "入浴", "会話", "散歩"]},
-]
-
 CONFIGS = {
     "tier": {
         "title": "休日にいちばんやりたいこと",
@@ -81,6 +66,7 @@ def public_player(p, room):
     pid = p["id"]
     return {"id": pid, "name": p["name"], "online": bool(p["ws"] and not p["ws"].closed),
             "answered": pid in room["answers"], "guessed": pid in room["guesses"],
+            "topicSubmitted": pid in room["topics"],
             "score": room["points"].get(pid, 0)}
 
 
@@ -100,15 +86,7 @@ def room_snapshot(room, pid):
     elif room["game"] == "tier" and target:
         visible_config = room["playerConfigs"].get(target, visible_config)
     if phase == "reveal" and target:
-        reveal = {
-            "truth": room["answers"][target],
-            "targetId": target,
-            "rows": [
-                {"id": opid, "name": room["players"][opid]["name"], "guess": g,
-                 "score": sum(a == b for a, b in zip(g, room["answers"][target]))}
-                for opid, g in room["guesses"].items()
-            ],
-        }
+        reveal = room["history"][-1] if room["history"] else None
     return {
         "type": "state", "me": pid,
         "room": {"code": room["code"], "owner": room["owner"], "game": room["game"],
@@ -118,6 +96,10 @@ def room_snapshot(room, pid):
                  "targetId": target, "active": room["active"],
                  "answeredCount": len(room["answers"]), "guessCount": len(room["guesses"]),
                  "myAnswer": room["answers"].get(pid), "myGuess": room["guesses"].get(pid),
+                 "tierMode": room["tierMode"], "topicCount": len(room["topics"]),
+                 "myTopic": room["topics"].get(pid) if phase == "compose" else None,
+                 "matchNo": room["matchNo"],
+                 "history": room["history"] if phase == "final" else None,
                  "reveal": reveal},
     }
 
@@ -163,6 +145,28 @@ def valid_config(game, config):
     return {"title": title, "items": items}
 
 
+def assign_tier_topics(room):
+    """Assign exactly one player-authored prompt per player without self-dealing in shuffle mode."""
+    participants = list(room["active"])
+    if len(participants) < 2 or any(pid not in room["topics"] for pid in participants):
+        raise ValueError("2人以上のお題がそろっていません")
+    room["playerConfigs"] = {}
+    room["topicAuthors"] = {}
+    if room["tierMode"] == "shuffle":
+        mixed = participants[:]
+        secrets.SystemRandom().shuffle(mixed)
+        distance = secrets.randbelow(len(mixed) - 1) + 1
+        for i, recipient in enumerate(mixed):
+            author = mixed[(i + distance) % len(mixed)]
+            room["playerConfigs"][recipient] = room["topics"][author].copy()
+            room["topicAuthors"][recipient] = author
+    else:
+        for player in participants:
+            room["playerConfigs"][player] = room["topics"][player].copy()
+            room["topicAuthors"][player] = player
+    room["phase"] = "answer"
+
+
 async def handle_event(ws, context, obj):
     t = obj.get("type")
     if t in ("create", "join"):
@@ -176,7 +180,8 @@ async def handle_event(ws, context, obj):
             c = code()
             room = {"code": c, "players": {}, "owner": None, "phase": "lobby",
                     "game": "tier", "config": dict(CONFIGS["tier"]), "active": [], "playerConfigs": {}, "answers": {},
-                    "guesses": {}, "roundIndex": 0, "points": {}, "lastUsed": time.time()}
+                    "guesses": {}, "roundIndex": 0, "points": {}, "lastUsed": time.time(),
+                    "tierMode": "self", "topics": {}, "topicAuthors": {}, "history": [], "matchNo": 0}
             ROOMS[c] = room
         else:
             c = str(obj.get("code", "")).upper().strip()
@@ -218,7 +223,12 @@ async def handle_event(ws, context, obj):
         if game not in CONFIGS:
             raise ValueError("ゲームが不正です")
         room["game"] = game
-        room["config"] = valid_config(game, obj.get("config") or {})
+        room["config"] = CONFIGS[game] if game != "tier" else dict(CONFIGS["tier"])
+        if game == "tier":
+            mode = obj.get("tierMode", room["tierMode"])
+            if mode not in ("self", "shuffle"):
+                raise ValueError("Tier表の配布方法が不正です")
+            room["tierMode"] = mode
     elif t == "start":
         if not is_owner or phase != "lobby":
             raise ValueError("ルーム作成者だけが開始できます")
@@ -228,18 +238,19 @@ async def handle_event(ws, context, obj):
         room["answers"] = {}
         room["guesses"] = {}
         room["playerConfigs"] = {}
-        if room["game"] == "tier":
-            # Host gets the custom topic, everyone else gets a distinct preset.
-            pool = [t for t in TIER_POOL if t["title"] != room["config"]["title"]]
-            secrets.SystemRandom().shuffle(pool)
-            for i, player_id in enumerate(room["active"]):
-                if player_id == room["owner"]:
-                    room["playerConfigs"][player_id] = room["config"]
-                else:
-                    room["playerConfigs"][player_id] = pool[i % len(pool)]
+        room["topics"] = {}
+        room["topicAuthors"] = {}
+        room["history"] = []
+        room["matchNo"] += 1
         room["roundIndex"] = 0
         room["points"] = {p: 0 for p in room["players"]}
-        room["phase"] = "answer"
+        room["phase"] = "compose" if room["game"] == "tier" else "answer"
+    elif t == "topic":
+        if phase != "compose" or pid not in room["active"]:
+            raise ValueError("今はお題を提出できません")
+        room["topics"][pid] = valid_config("tier", obj.get("config") or {})
+        if all(p in room["topics"] for p in room["active"]):
+            assign_tier_topics(room)
     elif t == "answer":
         if phase != "answer" or pid not in room["active"]:
             raise ValueError("今は正解を登録できません")
@@ -270,7 +281,13 @@ async def handle_event(ws, context, obj):
     elif t == "force":
         if not is_owner:
             raise ValueError("ルーム作成者だけがスキップできます")
-        if phase == "answer":
+        if phase == "compose":
+            players = [p for p in room["active"] if p in room["topics"]]
+            if len(players) < 2:
+                raise ValueError("2人以上のお題が必要です")
+            room["active"] = players
+            assign_tier_topics(room)
+        elif phase == "answer":
             players = [p for p in room["active"] if p in room["answers"]]
             if len(players) < 2:
                 raise ValueError("2人以上が正解を登録してから続けてください")
@@ -288,23 +305,19 @@ async def handle_event(ws, context, obj):
         room["phase"] = "lobby"
         room["active"] = []
         room["playerConfigs"] = {}
+        room["topics"] = {}
+        room["topicAuthors"] = {}
+        room["history"] = []
         room["answers"] = {}
         room["guesses"] = {}
-        room["playerConfigs"] = {}
-        if room["game"] == "tier":
-            # Host gets the custom topic, everyone else gets a distinct preset.
-            pool = [t for t in TIER_POOL if t["title"] != room["config"]["title"]]
-            secrets.SystemRandom().shuffle(pool)
-            for i, player_id in enumerate(room["active"]):
-                if player_id == room["owner"]:
-                    room["playerConfigs"][player_id] = room["config"]
-                else:
-                    room["playerConfigs"][player_id] = pool[i % len(pool)]
         room["roundIndex"] = 0
         room["points"] = {p: 0 for p in room["players"]}
         # On a fresh match, remove disconnected members from the lobby.
         for oldid in [x for x, p in room["players"].items() if not p["ws"] or p["ws"].closed]:
             del room["players"][oldid]
+            room["points"].pop(oldid, None)
+        if room["owner"] not in room["players"] and room["players"]:
+            room["owner"] = next(iter(room["players"]))
     else:
         raise ValueError("操作を認識できません")
     await broadcast(room)
@@ -317,6 +330,16 @@ def reveal_round(room):
     truth = room["answers"][target]
     for pid, guess in room["guesses"].items():
         room["points"][pid] += sum(x == y for x, y in zip(truth, guess))
+    author = room["topicAuthors"].get(target) if room["game"] == "tier" else None
+    topic = room["playerConfigs"].get(target, room["config"])
+    room["history"].append({
+        "targetId": target, "targetName": room["players"][target]["name"],
+        "config": topic, "truth": truth[:],
+        "creatorName": room["players"].get(author, {}).get("name") if author else None,
+        "rows": [{"id": opid, "name": room["players"][opid]["name"],
+                  "guess": guess[:], "score": sum(a == b for a, b in zip(guess, truth))}
+                 for opid, guess in room["guesses"].items()],
+    })
     room["phase"] = "reveal"
 
 
