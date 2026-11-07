@@ -63,14 +63,14 @@ if(phase==='reveal'){
  const r=room.reveal;
  const next=owner?action(room.roundIndex+1===room.totalTargets?'最終結果を見る →':'次の主役へ →','send({type:"next"})'):'';
  const creator=room.tierMode==='shuffle'&&r.creatorName?`<p class="small">作成者：${esc(r.creatorName)}さん</p>`:'';
- app.innerHTML=panel(`REVEAL ${room.roundIndex+1} / ${room.totalTargets}`,'全員の回答を一覧で比較',top+`<div class="resultbadge center">主役：<strong>${esc(r.targetName)}さん</strong><br>${esc(r.config.title)}</div>${creator}${compareMatrix(r)}<div class="btns">${next}</div><p class="small">正解は答え合わせまで秘密です。各マスをタップすると回答の全文を表示します。</p>`);return;
+ app.innerHTML=panel(`REVEAL ${room.roundIndex+1} / ${room.totalTargets}`,'全員の回答を一覧で比較',top+`<div class="resultbadge center">主役：<strong>${esc(r.targetName)}さん</strong><br>${esc(r.config.title)}</div>${creator}${compareMatrix(r)}<div class="btns">${action('🖼️ この結果を画像保存','saveResultImage(\"round\")','gold')}${action('画像を共有','shareResultImage(\"round\")','alt')}${next}</div><p class="small">正解は答え合わせまで秘密です。各マスをタップすると回答の全文を表示します。</p>`);return;
 }
 if(phase==='final'){
  const ranked=[...room.players].sort((a,b)=>b.score-a.score);
  const historyList=room.history||[];
  if(selectedRound>=historyList.length)selectedRound=0;
  const roundChooser=historyList.length?`<label class="labeled" for="round-select">振り返るラウンドを選択</label><select class="field" id="round-select" onchange="changeRound(this.value)">${historyList.map((r,i)=>`<option value="${i}" ${i===selectedRound?'selected':''}>${i+1}. ${esc(r.targetName)}さん｜${esc(r.config.title)}</option>`).join('')}</select>${compareMatrix(historyList[selectedRound])}`:'<div class="info">まだ答え合わせを完了したラウンドはありません。</div>';
- app.innerHTML=panel('FINAL / ゲーム終了',room.endedEarly?'途中終了｜ここまでの結果':'理解度ランキング！',top+`<div class="compact-scoreboard">${ranked.map((p,i)=>`<div class="scorechip"><strong>${i+1}位 ${esc(p.name)}</strong><b>${p.score}pt</b></div>`).join('')}</div><h3>みんなの回答を振り返る</h3><p class="small">全ラウンドを縦に並べず、見たいラウンドだけ切り替えます。</p>${roundChooser}<div class="btns">${owner?action('もう一度遊ぶ','send({type:"restart"})'):''}${action('タイトルへ戻る','leaveToTitle()','alt')}</div>`);return;
+ app.innerHTML=panel('FINAL / ゲーム終了',room.endedEarly?'途中終了｜ここまでの結果':'理解度ランキング！',top+`<div class="compact-scoreboard">${ranked.map((p,i)=>`<div class="scorechip"><strong>${i+1}位 ${esc(p.name)}</strong><b>${p.score}pt</b></div>`).join('')}</div><h3>みんなの回答を振り返る</h3><p class="small">全ラウンドを縦に並べず、見たいラウンドだけ切り替えます。</p>${roundChooser}<div class="btns">${historyList.length?action('🖼️ このラウンドを画像保存','saveResultImage(\"round\")','gold'):''}${historyList.length?action('全ラウンドまとめ画像','saveResultImage(\"all\")','alt'):''}${historyList.length?action('画像を共有','shareResultImage(\"all\")','alt'):''}</div><div class="btns">${owner?action('もう一度遊ぶ','send({type:"restart"})'):''}${action('タイトルへ戻る','leaveToTitle()','alt')}</div>`);return;
 }
 
 }
@@ -144,4 +144,121 @@ let filled=room.game==='tier'||arr.every(v=>v!==null);html+=`<div class="btns"><
 function chooseAnswer(q,v){draft.arr[q]=v;const ed=document.getElementById('editor');if(ed)ed.innerHTML=renderEditor(draft.kind,draft.target)}
 function swap(pos,delta){let j=pos+delta;if(j<0||j>=5)return;[draft.arr[pos],draft.arr[j]]=[draft.arr[j],draft.arr[pos]];const ed=document.getElementById('editor');if(ed)ed.innerHTML=renderEditor(draft.kind,draft.target)}
 function submitDraft(){if(!draft||room.game!=='tier'&&draft.arr.some(v=>v===null))return;send({type:draft.kind==='answer'?'answer':'guess',answers:draft.arr})}
+
+// Create shareable result images locally. No screenshots or player answers leave the browser.
+function getExportRounds(which){
+ if(!room || !['reveal','final'].includes(room.phase)) return [];
+ if(room.phase==='reveal')return room.reveal?[room.reveal]:[];
+ const hist=room.history||[];
+ return which==='all'?hist:(hist[selectedRound]?[hist[selectedRound]]:[]);
+}
+function makeResultCanvas(which){
+ const rounds=getExportRounds(which);
+ if(!rounds.length)throw Error('まだ共有できる結果がありません');
+ const isAll=which==='all'&&room.phase==='final';
+ const W=1120, M=46, colStart=304, cellW=(W-M-colStart)/5, rowH=52;
+ const cards=rounds.map(r=>({r,people:[{name:r.targetName+'（正解）',truth:true,score:null,answer:r.truth},...(r.rows||[]).map(x=>({name:x.name,truth:false,score:x.score,answer:x.guess}))],legend:room.game==='tier'?5:5}));
+ const headerH=isAll?205+Math.ceil((room.players?.length||0)/3)*39:140;
+ const cardH=c=>116+rowH*(c.people.length+1)+(room.game==='tier'?116:260);
+ const H=headerH+cards.reduce((v,c)=>v+cardH(c)+20,0)+72;
+ if(H>16000)throw Error('全ラウンドの画像が大きすぎます。1ラウンドずつ保存してください');
+ const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
+ const ctx=canvas.getContext('2d');if(!ctx)throw Error('画像作成に対応していないブラウザです');
+ ctx.fillStyle='#fff9fc';ctx.fillRect(0,0,W,H);
+ const draw=(txt,x,y,size=22,color='#392d3a',weight='700',maxWidth=null)=>{
+   ctx.font=`${weight} ${size}px system-ui, "Noto Sans JP", sans-serif`;
+   let value=String(txt??'');
+   if(maxWidth){while(value.length>1&&ctx.measureText(value).width>maxWidth)value=value.slice(0,-2)+'…'}
+   ctx.fillStyle=color;ctx.textBaseline='middle';ctx.textAlign='left';ctx.fillText(value,x,y);
+ };
+ const card=(x,y,w,h,color,stroke=null)=>{ctx.fillStyle=color;ctx.fillRect(x,y,w,h);if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.strokeRect(x,y,w,h)}};
+ card(0,0,W,16,'#ef3a9d');
+ draw('♡ なかみくらべ。',M,59,39,'#e73596','900');
+ draw(isAll?'みんなの最終結果':'主役の答えを当てよう！',M,110,30,'#483448','900');
+ let y=headerH;
+ if(isAll){
+   const ranked=[...(room.players||[])].sort((a,b)=>b.score-a.score);
+   draw('理解度ランキング',M,151,20,'#9d3873','900');
+   ranked.forEach((p,i)=>{
+     const j=Math.floor(i/3),k=i%3;
+     const yy=185+j*39;
+     card(M+k*338,yy-15,325,32,'#ffeaf4');
+     draw(`${i+1}位  ${p.name}`,M+8+k*338,yy,16,'#613d56','850',220);
+     draw(`${p.score} pt`,M+237+k*338,yy,15,'#b52d7e','900',80);
+   });
+ }
+ for(let ri=0;ri<cards.length;ri++){
+  const c=cards[ri],r=c.r,height=cardH(c);
+  card(M,y,W-M*2,height-10,'#ffffff','#edcede');
+  card(M,y,W-M*2,6,'#eb3695');
+  draw(`ROUND ${isAll?ri+1:room.phase==='reveal'?room.roundIndex+1:selectedRound+1}  |  ${r.targetName} さんの正解`,M+18,y+36,25,'#a52873','900',W-2*M-36);
+  draw(r.config.title,M+18,y+79,22,'#513d52','850',W-2*M-36);
+  const top=y+104;
+  card(M+12,top, W-2*M-24,44,'#fbe8f2');
+  draw('プレイヤー',M+26,top+23,17,'#753a61','850');
+  const headers=room.game==='tier'?['S','A','B','C','D']:['Q1','Q2','Q3','Q4','Q5'];
+  headers.forEach((v,i)=>draw(v,colStart+i*cellW+cellW*.41,top+23,22,'#a12d78','900'));
+  for(let pi=0;pi<c.people.length;pi++){
+   const person=c.people[pi],yy=top+44+pi*rowH;
+   card(M+12,yy,W-2*M-24,rowH-2,person.truth?'#fff1c5':pi%2===0?'#fff8fc':'#ffffff');
+   draw(person.name,M+23,yy+18,16,person.truth?'#794a27':'#603a52','850',208);
+   draw(person.truth?'正解':`${person.score??0} / ${r.truth.length} 一致`,M+23,yy+38,13,'#92758a','700',207);
+   for(let qi=0;qi<5;qi++){
+    const x=colStart+qi*cellW, v=person.answer[qi];
+    const correct=person.truth||r.truth[qi]===v;
+    card(x+2,yy+4,cellW-7,rowH-10,person.truth?'#fbe2a7':correct?'#d6f4e1':'#ffdde7');
+    const raw=room.game==='tier'?(r.config.items[v]||'?'):
+      (room.game==='value'?['①','②','③'][v]:room.game==='either'?['A','B'][v]:['A','B','C','D'][v])||'?';
+    draw(raw,x+8,yy+rowH/2,16,person.truth?'#734d26':correct?'#266d50':'#a54364','850',cellW-22);
+   }
+  }
+  let legendY=top+44+c.people.length*rowH+24;
+  draw('項目・質問の詳細',M+24,legendY,17,'#ae367a','900');
+  if(room.game==='tier'){
+   for(let qi=0;qi<5;qi++){
+    const xx=M+24+(qi%3)*323,ly=legendY+26+Math.floor(qi/3)*34;
+    draw(`${'SABCD'[qi]}  ${r.config.items[r.truth[qi]]}`,xx,ly,15,'#735d72','800',303);
+   }
+  }else{
+   for(let qi=0;qi<5;qi++){
+    const ly=legendY+29+qi*38,q=r.config.qs[qi];
+    draw(`Q${qi+1}  ${q.q}`,M+24,ly,15,'#735d72','800',690);
+    const ans=q.options[r.truth[qi]]||'';
+    draw(`正解: ${ans}`,M+754,ly,15,'#a83878','850',285);
+   }
+  }
+  y+=height+20;
+ }
+ draw('結果は各参加者の予想に基づきます。',M,H-38,16,'#98788d','600');
+ return canvas;
+}
+function resultFileName(which){
+ const key=room?.game||'result';const suffix=which==='all'?'all-rounds':'round-'+((room?.roundIndex??selectedRound)+1);
+ return `nakamikurabe-${key}-${suffix}.png`;
+}
+async function resultImageBlob(which){
+ const canvas=makeResultCanvas(which);
+ return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('画像に変換できませんでした')),'image/png'));
+}
+function saveBlob(blob,name){
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+async function saveResultImage(which){
+ try{const blob=await resultImageBlob(which);saveBlob(blob,resultFileName(which))}
+ catch(e){alert('画像の保存に失敗しました：'+e.message)}
+}
+async function shareResultImage(which){
+ try{
+  const blob=await resultImageBlob(which),name=resultFileName(which);
+  const file=new File([blob],name,{type:'image/png'});
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:'なかみくらべ。の結果'});return}
+    catch(e){if(e.name==='AbortError')return}
+  }
+  saveBlob(blob,name);
+  alert('画像を保存しました。Discordなどのチャットに添付して共有してください。');
+ }catch(e){alert('画像の共有に失敗しました：'+e.message)}
+}
+
 landing();let roomParam=new URLSearchParams(location.search).get('room');let savedName=sessionStorage.getItem('nakami_name');if(roomParam&&savedName){document.getElementById('nickname').value=savedName;document.getElementById('roomcode').value=roomParam.toUpperCase();connectNow('join')}
