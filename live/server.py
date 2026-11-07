@@ -14,6 +14,8 @@ ROOT = Path(__file__).parent
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ROOMS = {}
 MAX_PLAYERS = 12
+EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
+QUESTION_COUNT = 5
 CONFIGS = {
     "tier": {
         "title": "休日にいちばんやりたいこと",
@@ -81,9 +83,9 @@ def room_snapshot(room, pid):
     phase = room["phase"]
     reveal = None
     visible_config = room["config"]
-    if room["game"] == "tier" and phase == "answer":
+    if phase == "answer":
         visible_config = room["playerConfigs"].get(pid, visible_config)
-    elif room["game"] == "tier" and target:
+    elif target:
         visible_config = room["playerConfigs"].get(target, visible_config)
     if phase == "reveal" and target:
         reveal = room["history"][-1] if room["history"] else None
@@ -100,6 +102,7 @@ def room_snapshot(room, pid):
                  "myTopic": room["topics"].get(pid) if phase == "compose" else None,
                  "matchNo": room["matchNo"],
                  "history": room["history"] if phase == "final" else None,
+                 "endedEarly": room["endedEarly"],
                  "reveal": reveal},
     }
 
@@ -120,29 +123,57 @@ async def broadcast(room):
             await send_json(p["ws"], room_snapshot(room, pid))
 
 
-def validate_answers(room, arr):
-    config = room["config"]
+def validate_answers(room, pid, arr):
     if not isinstance(arr, list):
         return False
     if room["game"] == "tier":
-        return len(arr) == 5 and set(type(x) for x in arr) == {int} and set(arr) == set(range(5))
+        return len(arr) == 5 and all(type(x) is int for x in arr) and set(arr) == set(range(5))
+    config = (room["playerConfigs"].get(pid, room["config"])
+              if room["phase"] == "answer" else
+              room["playerConfigs"].get(active_target(room), room["config"]))
     qs = config["qs"]
     return len(arr) == len(qs) and all(type(x) is int and 0 <= x < len(qs[i]["options"]) for i, x in enumerate(arr))
 
 
 def valid_config(game, config):
-    if game != "tier":
-        return CONFIGS[game]
-    title = str(config.get("title", "")).strip()[:90]
-    items = config.get("items")
-    if not title or not isinstance(items, list) or len(items) != 5:
-        raise ValueError("お題と5つのワードを指定してください")
-    if any(not isinstance(x, str) for x in items):
-        raise ValueError("ワードは文字列で指定してください")
-    items = [x.strip()[:40] for x in items]
-    if not all(items) or len(set(items)) != 5:
-        raise ValueError("異なる5つのワードを入力してください")
-    return {"title": title, "items": items}
+    if not isinstance(config, dict):
+        raise ValueError("お題のデータが不正です")
+    if game == "tier":
+        title = str(config.get("title", "")).strip()[:90]
+        items = config.get("items")
+        if not title or not isinstance(items, list) or len(items) != 5:
+            raise ValueError("お題と5つのワードを指定してください")
+        if any(not isinstance(x, str) for x in items):
+            raise ValueError("ワードは文字列で指定してください")
+        items = [x.strip()[:40] for x in items]
+        if not all(items) or len(set(items)) != 5:
+            raise ValueError("異なる5つのワードを入力してください")
+        return {"title": title, "items": items}
+    qs = config.get("qs")
+    expected = {"value": 3, "either": 2, "quiz": 4}.get(game)
+    if expected is None or not isinstance(qs, list) or len(qs) != QUESTION_COUNT:
+        raise ValueError(f"{QUESTION_COUNT}問を入力してください")
+    cleaned = []
+    for x in qs:
+        if not isinstance(x, dict) or not isinstance(x.get("q"), str):
+            raise ValueError("質問文を入力してください")
+        q = x["q"].strip()[:120]
+        opts = x.get("options")
+        if not q or not isinstance(opts, list) or len(opts) != expected or any(not isinstance(o, str) for o in opts):
+            raise ValueError("質問文と選択肢をすべて入力してください")
+        opts = [o.strip()[:80] for o in opts]
+        if any(not o for o in opts) or len(set(opts)) != expected:
+            raise ValueError("同じ選択肢は使えません")
+        cleaned.append({"q": q, "options": opts})
+    return {"title": CONFIGS[game]["title"], "qs": cleaned}
+
+
+def random_config(game):
+    source = EXAMPLES[game]
+    if game == "tier":
+        return secrets.choice(source).copy()
+    return {"title": CONFIGS[game]["title"],
+            "qs": secrets.SystemRandom().sample(source, QUESTION_COUNT)}
 
 
 def assign_tier_topics(room):
@@ -181,7 +212,8 @@ async def handle_event(ws, context, obj):
             room = {"code": c, "players": {}, "owner": None, "phase": "lobby",
                     "game": "tier", "config": dict(CONFIGS["tier"]), "active": [], "playerConfigs": {}, "answers": {},
                     "guesses": {}, "roundIndex": 0, "points": {}, "lastUsed": time.time(),
-                    "tierMode": "self", "topics": {}, "topicAuthors": {}, "history": [], "matchNo": 0}
+                    "tierMode": "self", "topics": {}, "topicAuthors": {}, "history": [], "matchNo": 0,
+                    "endedEarly": False}
             ROOMS[c] = room
         else:
             c = str(obj.get("code", "")).upper().strip()
@@ -223,12 +255,11 @@ async def handle_event(ws, context, obj):
         if game not in CONFIGS:
             raise ValueError("ゲームが不正です")
         room["game"] = game
-        room["config"] = CONFIGS[game] if game != "tier" else dict(CONFIGS["tier"])
-        if game == "tier":
-            mode = obj.get("tierMode", room["tierMode"])
-            if mode not in ("self", "shuffle"):
-                raise ValueError("Tier表の配布方法が不正です")
-            room["tierMode"] = mode
+        room["config"] = CONFIGS[game]
+        mode = obj.get("tierMode", room["tierMode"])
+        if mode not in ("self", "shuffle"):
+            raise ValueError("お題の配布方法が不正です")
+        room["tierMode"] = mode
     elif t == "start":
         if not is_owner or phase != "lobby":
             raise ValueError("ルーム作成者だけが開始できます")
@@ -241,21 +272,28 @@ async def handle_event(ws, context, obj):
         room["topics"] = {}
         room["topicAuthors"] = {}
         room["history"] = []
+        room["endedEarly"] = False
         room["matchNo"] += 1
         room["roundIndex"] = 0
         room["points"] = {p: 0 for p in room["players"]}
-        room["phase"] = "compose" if room["game"] == "tier" else "answer"
+        room["phase"] = "compose"
+    elif t == "example":
+        if phase != "compose" or pid not in room["active"] or pid in room["topics"]:
+            raise ValueError("今は例題を読み込めません")
+        await send_json(ws, {"type": "example", "game": room["game"],
+                             "matchNo": room["matchNo"], "config": random_config(room["game"])})
+        return
     elif t == "topic":
         if phase != "compose" or pid not in room["active"]:
             raise ValueError("今はお題を提出できません")
-        room["topics"][pid] = valid_config("tier", obj.get("config") or {})
+        room["topics"][pid] = valid_config(room["game"], obj.get("config") or {})
         if all(p in room["topics"] for p in room["active"]):
             assign_tier_topics(room)
     elif t == "answer":
         if phase != "answer" or pid not in room["active"]:
             raise ValueError("今は正解を登録できません")
         answers = obj.get("answers")
-        if not validate_answers(room, answers):
+        if not validate_answers(room, pid, answers):
             raise ValueError("回答の形式が不正です")
         room["answers"][pid] = answers
         if all(p in room["answers"] for p in room["active"]):
@@ -267,7 +305,7 @@ async def handle_event(ws, context, obj):
         if phase != "guess" or pid not in room["active"] or pid == target:
             raise ValueError("今は予想できません")
         guess = obj.get("answers")
-        if not validate_answers(room, guess):
+        if not validate_answers(room, pid, guess):
             raise ValueError("予想の形式が不正です")
         room["guesses"][pid] = guess
         if len(room["guesses"]) == len(room["active"]) - 1:
@@ -299,6 +337,28 @@ async def handle_event(ws, context, obj):
             reveal_round(room)
         else:
             raise ValueError("この場面ではスキップできません")
+    elif t == "end":
+        if not is_owner:
+            raise ValueError("ゲーム全体の終了はルーム作成者だけが行えます")
+        if phase == "lobby":
+            raise ValueError("待機中はタイトルに戻ってください")
+        room["endedEarly"] = phase != "final"
+        room["phase"] = "final"
+    elif t == "leave":
+        room["players"].pop(pid, None)
+        if phase == "lobby":
+            room["points"].pop(pid, None)
+        if room["owner"] == pid:
+            room["owner"] = next((x for x, p in room["players"].items()
+                                  if p["ws"] and not p["ws"].closed), None)
+        context["room"] = None
+        context["pid"] = None
+        if room["players"]:
+            await broadcast(room)
+        else:
+            ROOMS.pop(room["code"], None)
+        await ws.close(code=1000, message=b"left room")
+        return
     elif t == "restart":
         if not is_owner or phase != "final":
             raise ValueError("ルーム作成者だけがもう一度始められます")
@@ -308,6 +368,7 @@ async def handle_event(ws, context, obj):
         room["topics"] = {}
         room["topicAuthors"] = {}
         room["history"] = []
+        room["endedEarly"] = False
         room["answers"] = {}
         room["guesses"] = {}
         room["roundIndex"] = 0
@@ -330,7 +391,7 @@ def reveal_round(room):
     truth = room["answers"][target]
     for pid, guess in room["guesses"].items():
         room["points"][pid] += sum(x == y for x, y in zip(truth, guess))
-    author = room["topicAuthors"].get(target) if room["game"] == "tier" else None
+    author = room["topicAuthors"].get(target)
     topic = room["playerConfigs"].get(target, room["config"])
     room["history"].append({
         "targetId": target, "targetName": room["players"][target]["name"],
@@ -395,7 +456,7 @@ async def task_ctx(app):
 
 
 app = web.Application()
-app.add_routes([web.get("/", index), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/ws", websocket), web.get("/health", health)])
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
