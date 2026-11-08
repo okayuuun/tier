@@ -1,6 +1,6 @@
 'use strict';
 // Additional original party modes. The site intentionally uses its own decks and scenarios.
-const PARTY_GAMES=['ito','propose','soup'];
+const PARTY_GAMES=['ito','akaito','propose','soup','unique'];
 let partyDraft={key:'',tokens:[]};
 let partyItoText='';
 let partySoupText='';
@@ -14,6 +14,10 @@ function partyPlayerList(){return `<div class="playergrid">${players()}</div>`}
 function partyFinal(){const p=room.party, owner=room.owner===me, game=room.game;let html='';
  if(game==='ito'){
   const completed=p.rounds.filter(x=>x.success).length;html=`<div class="party-hero">${completed===p.maxStages?'🎉 みんなで脱出成功！':'✨ ここまでの結果'}<small>${completed} / ${p.maxStages}ステージ成功｜ライフ ${p.lives}</small></div><div class="party-stack">${p.rounds.map(r=>`<details class="party-detail"><summary>STAGE ${r.stage}：${esc(r.theme)}｜ライフ ${r.lives}</summary><p class="small">公開したカード：${r.played.map(x=>`${esc(x.name)} ${x.number}`).join(' → ')||'なし'}</p><p class="small">失ったカード：${r.discarded.map(x=>`${esc(x.name)} ${x.number}`).join('、')||'なし'}</p></details>`).join('')}</div>`;
+ }else if(game==='akaito'){
+  html=`<div class="party-hero">❤️ アカイイト最終結果<small>4ラウンドの総合得点</small></div><div class="party-standings">${[...room.players].sort((a,b)=>b.score-a.score).map((x,i)=>`<div class="party-score"><strong>${i+1}位 ${esc(x.name)}</strong><b>${x.score}pt</b></div>`).join('')}</div>${p.history.map(r=>`<details class="party-detail"><summary>${r.round}回目：${esc(r.theme)}</summary>${r.pairs.map(x=>`<p>${esc(x.leftName)} (${x.a}) ＋ ${esc(x.rightName)} (${x.b}) ＝ <b>${x.total}</b> / ${x.points}点</p>`).join('')||'<p>ペアなし</p>'}</details>`).join('')}`;
+ }else if(game==='unique'){
+  html=`<div class="party-hero">✨ 全員不一致チャレンジ<small>最終連続成功 ${p.streak} 回</small></div>${p.history.map(r=>`<details class="party-detail"><summary>${r.round}問目：${r.success?'✅ 成功':'❌ 失敗'}｜${esc(r.theme)}</summary>${r.answers.map(a=>`<p>${esc(a.name)}：${esc(a.text)}${a.duplicate?'（かぶり）':''}</p>`).join('')}</details>`).join('')}`;
  }else if(game==='propose'){
   const winners=Object.entries(p.rings).sort((a,b)=>b[1]-a[1]);html=`<h3>💍 指輪獲得数</h3><div class="party-standings">${winners.map(([id,num],i)=>`<div class="party-score"><strong>${i===0?'🥇 ':''}${esc(pName(id))}</strong><b>${num} / 3 💍</b></div>`).join('')}</div><h3>これまでのプロポーズ</h3><div class="party-stack">${p.history.map(r=>`<details class="party-detail"><summary>${r.round}回目｜審査：${esc(pName(r.judge))}｜💍 ${esc(r.winnerName)}</summary>${r.entries.map(x=>`<p><b>${esc(x.name)}：</b>${esc(x.text)}</p>`).join('')}</details>`).join('')}</div>`;
  }else{
@@ -25,9 +29,52 @@ function partyFinal(){const p=room.party, owner=room.owner===me, game=room.game;
 function renderParty(){if(!room || !PARTY_GAMES.includes(room.game))return;
  if(room.phase==='final')return partyFinal();
  if(room.game==='ito')return renderIto();
+ if(room.game==='akaito')return renderRedIto();
+ if(room.game==='unique')return renderUnique();
  if(room.game==='propose')return renderProposal();
  if(room.game==='soup')return renderSoup();
 }
+
+let redClueDraft='',uniqueAnswerDraft='';
+function renderRedIto(){
+ const p=room.party,owner=room.owner===me,remain=p.remaining||[],pending=p.pending;
+ const top=partyStatusBar(p)+`<div class="party-hero">❤️ ${esc(p.theme)}<small>2人の数字を合わせて100を目指そう。言葉で大きさを伝え、ウソもあり！</small></div>`;
+ const secret=p.myNumber===undefined?'':`<div class="party-number"><small>あなたの秘密の数字</small><strong>${p.myNumber}</strong><span>ほかの人には内緒</span></div>`;
+ const clues=()=>`<div class="party-clues">${(p.clues||[]).map(x=>`<div class="party-clue"><b>${esc(x.name)}</b><span>${esc(x.text)}</span></div>`).join('')}</div>`;
+ if(room.phase==='red_clue'){
+  const content=p.clueSubmitted?`<div class="info">✅ あなたの例えを送信しました。他の人を待っています。</div>`:
+  secret+`<label class="labeled">この数字を言葉で例える</label><textarea id="red-hint" class="field" rows="2" maxlength="100" oninput="redClueDraft=this.value" placeholder="例：嬉しいプレゼントなら『ちょっと高いケーキ』">${esc(redClueDraft)}</textarea><div class="btns">${pAction('この例えを公開する','submitRedClue()')}</div>`;
+  return partyTitle('RED ITO / 例えの準備','数字は口にせず、言葉で伝える',top+content+`<p class="small">${p.clues.length} / ${room.active.length}人の例えが提出済み</p>${clues()}${owner&&!p.clues.length?pAction('🎲 お題を変える','send({type:"red_redraw"})','alt'):''}`);
+ }
+ if(room.phase==='red_pair'){
+  let offer='';
+  if(pending){if(pending.to===me){offer=`<div class="proposal-entry">💌 ${esc(pName(pending.from))}さんからペアの申し込みです。<div class="btns">${pAction('ペアになる','send({type:"red_accept"})','gold')}${pAction('断る','send({type:"red_reject"})','alt')}</div></div>`;}else{offer=`<div class="info">${esc(pName(pending.from))}さんが${esc(pName(pending.to))}さんにペアを申し込んでいます。回答待ち。</div>`}}
+  else if(remain.includes(me))offer=`<p class="small">合計100に近そうな人を1人選んで申請。相手が承認すると成立します。</p><div class="red-players">${remain.filter(x=>x!==me).map(x=>`<button type="button" class="red-person" onclick="redOffer('${x}')"><b>${esc(pName(x))}</b><small>❤️ ペアを申し込む</small></button>`).join('')||'<div class="info">あなた以外は全員ペア成立済みです。</div>'}</div>`;
+  else offer='<div class="info">あなたのペアは成立しました。残りの人を待ちましょう。</div>';
+  const pairs=`<div class="party-stack">${p.pairs.map(x=>`<div class="red-pair"><b>${esc(x.leftName)} ＋ ${esc(x.rightName)}</b><span>${x.a} ＋ ${x.b} ＝ ${x.total}</span><strong>${x.over?'💔 100超え：0点':`❤️ +${x.points}点`}</strong></div>`).join('')}</div>`;
+  return partyTitle('RED ITO / ペア探し','100になる相手を探そう',top+secret+`<h3>みんなの例え</h3>${clues()}<h3>ペアになっていない人：${remain.length}人</h3>${offer}<h3>成立したペア</h3>${pairs||'<p class="small">まだペアはありません。</p>'}`);
+ }
+ if(room.phase==='red_reveal'){
+  const last=p.last;
+  return partyTitle('RED ITO / 答え合わせ','ペアの数字を確認',top+`<div class="party-standings">${last.numbers.map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>${x.number}</b></div>`).join('')}</div><div class="party-stack">${last.pairs.map(x=>`<div class="red-pair"><b>${esc(x.leftName)} ＋ ${esc(x.rightName)}</b><span>${x.a} + ${x.b} = ${x.total}</span><strong>${x.over?'100超え・0点':`+${x.points}pt`}</strong></div>`).join('')}</div>${last.unmatched.length?`<div class="info">ペアを作れなかった人：${last.unmatched.map(x=>esc(x.name)).join('、')}</div>`:''}<div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次のラウンドへ','send({type:"red_next"})','gold'):''}</div>`);
+ }
+}
+function submitRedClue(){const v=(document.getElementById('red-hint')?.value||redClueDraft).trim();if(!v)return error('例えを入力してください');send({type:'red_clue',text:v})}
+function redOffer(target){send({type:'red_offer',target})}
+function renderUnique(){
+ const p=room.party,owner=room.owner===me;
+ const top=partyStatusBar(p)+`<div class="party-hero">✨ ${esc(p.theme)}<small>全員が違う回答を出せたら成功！</small></div><div class="unique-streak">連続成功 <strong>${p.streak}</strong> / ${p.targetStreak}回　・　第${p.round+1}問 / ${p.roundLimit}問</div>`;
+ if(room.phase==='uniq_answer'){
+  const mine=p.submitted?'<div class="info">✅ 提出済み。みんなの回答が集まるまで秘密です。</div>':`<label class="labeled">ほかの人と被らない言葉を考えよう</label><input id="uniq-input" class="field" maxlength="45" value="${esc(uniqueAnswerDraft)}" oninput="uniqueAnswerDraft=this.value" placeholder="例：わさび味のアイス"><div class="btns">${pAction('回答を送る','submitUnique()','gold')}</div>`;
+  return partyTitle('UNIQUE / かぶり禁止','全員バラバラを目指そう',top+mine+`<p class="small">提出：${p.submittedCount} / ${room.active.length}人</p>${owner&&!p.submittedCount?pAction('🎲 別のお題にする','send({type:"uniq_redraw"})','alt'):''}`);
+ }
+ if(room.phase==='uniq_reveal'){
+  const r=p.last;
+  return partyTitle('UNIQUE / 答え合わせ',r.success?'🎉 全員不一致！':'💥 回答がかぶった！',top+`<div class="unique-results">${r.answers.map(x=>`<div class="unique-result ${x.duplicate?'bad':'good'}"><b>${esc(x.name)}</b><span>${esc(x.text)}</span><strong>${x.duplicate?'かぶり':'セーフ'}</strong></div>`).join('')}</div><div class="btns">${owner?pAction(p.streak>=p.targetStreak||p.round+1>=p.roundLimit?'最終結果へ':'次のお題へ','send({type:"uniq_next"})','gold'):''}</div>`);
+ }
+}
+function submitUnique(){const v=(document.getElementById('uniq-input')?.value||uniqueAnswerDraft).trim();if(!v)return error('回答を入力してください');uniqueAnswerDraft='';send({type:'uniq_answer',text:v})}
+
 function renderIto(){const p=room.party,owner=room.owner===me,stage=p.stage,remaining=p.remaining.includes(me);
  const top=partyStatusBar(p)+`<div class="party-hero">🕸️ ${esc(p.theme)}<small>数字を直接言わず、テーマに沿う言葉で伝え合おう</small></div><div class="party-lives">${'❤️'.repeat(p.lives)}${'🤍'.repeat(3-p.lives)} <span>共有ライフ：${p.lives} / 3</span></div>`;
  const secret=p.myNumber===null?'':`<div class="party-number"><small>あなたの秘密の数字</small><strong>${p.myNumber}</strong><span>他の人には見えません</span></div>`;
@@ -107,11 +154,12 @@ function renderSoup(){const p=room.party,owner=room.owner===me,narrator=p.narrat
   else reply=x.verdict==='wrong'?'<span class="verdict no">まだ正解ではありません</span>':(isNarrator&&room.phase==='soup_ask'?`<div class="reply-buttons">${pAction('✅ 正解にする',`soupResolve(${x.id})`,'gold')}${x.verdict!=='wrong'?pAction('惜しい・不正解',`soupReject(${x.id})`,'alt'):''}</div>`:'<small>出題者が判定します</small>');
   return `<div class="soup-entry"><div><b>${esc(x.name)}</b> ${badge}</div><p>${esc(x.text)}</p><div>${reply}</div></div>`}).join('');
  if(room.phase==='soup_ask'){
-  const secret=isNarrator?`<div class="soup-secret"><b>🔒 出題者だけに見える真相</b><p>${esc(p.solution)}</p><div class="soup-master-hints">${(p.secretHints||[]).map((x,i)=>`<div><b>ヒント${i+1}：</b>${esc(x)}</div>`).join('')}</div></div>`:'';
-  const hint=p.hints.length?`<div class="info">${p.hints.map((x,i)=>`💡 ヒント${i+1}：${esc(x)}`).join('<br>')}</div>`:'';
-  const ask=isNarrator?`${secret}<div class="btns">${p.hints.length<(p.secretHints||[]).length?pAction('💡 次のヒントを公開','send({type:"soup_hint"})','alt'):''}${!p.entries.length&&!p.hints.length?pAction('🎲 別の問題に変更','send({type:"soup_reroll"})','alt'):''}${pAction('真相を公開して終了','soupResolve(null)')}</div><p class="small">質問に「はい／いいえ／関係ありません」を返して、友達の推理を判定します。真相は公開ボタンを押すまで自分だけに表示されます。</p>`:
+  const secret=isNarrator?`<div class="soup-secret"><b>🔒 出題者だけに見える真相</b><p>${esc(p.solution)}</p><div class="soup-master-hints">${(p.secretHints||[]).map((x,i)=>`<div><b>ヒント${i+1}：</b>${esc(x)}</div>`).join('')}</div><details class="party-detail"><summary>🎓 出題者ガイド・重要な確認ポイント</summary>${(p.hostGuide||[]).map(x=>`<p>• ${esc(x)}</p>`).join('')}<h4>質問されたときの回答例</h4>${(p.hostQA||[]).map(x=>`<p><b>Q. ${esc(x.q)}</b><span> → ${esc(x.a)}</span></p>`).join('')}</details><details class="party-detail"><summary>📚 もっと凝った問題を探す（出題者専用）</summary><p class="small">有名な問題の本文や解答はここには転載していません。出題者が元サイトで利用条件を確認できます。</p><p><a href="https://www.umigame-quiz.com/collections/high-rated-umigame" target="_blank" rel="noopener noreferrer">高評価の公開問題集</a></p><p><a href="https://sui-hei.net/mondai" target="_blank" rel="noopener noreferrer">ラテシン問題集</a></p><p><a href="https://quizmondai.com/lateral-thinking/" target="_blank" rel="noopener noreferrer">ピコンクエストの問題集</a></p></details></div>`:'';
+  const library=NKM.games().filter(g=>g.game==='soup').slice(0,25);const soupExtras=isNarrator&&!p.entries.length&&!p.hints.length?`<details class="party-detail"><summary>📚 別の良問を使う・自作問題を出す</summary><p>高評価の問題は原作者の掲載元で確認できます。無断転載はせず、出題者が読んで進行するのがおすすめです。</p><div class="btns"><a href="https://www.umigame-quiz.com/collections/high-rated-umigame" target="_blank" rel="noopener noreferrer" class="btn alt">高評価問題集</a><a href="https://sui-hei.net/mondai" target="_blank" rel="noopener noreferrer" class="btn alt">ラテシン問題集</a><a href="https://www.de-bono.net/mondai/good" target="_blank" rel="noopener noreferrer" class="btn alt">解き心地から探す</a></div><p>自分で作った問題を出題する場合：</p>${library.length?`<select class="field" id="saved-soup">${library.map((g,i)=>`<option value="${i}">${esc(g.title)}</option>`).join('')}</select><div class="btns">${pAction('保存した謎を出題する','submitMySoup()','gold')}</div>`:'<p class="small">アトリエでウミガメのスープを作成・保存すると、ここから出題できます。</p>'}<a href="/studio" class="btn alt" style="display:inline-block;text-decoration:none">✏️ 出題用の謎を作る</a></details>`:'';
+   const hint=p.hints.length?`<div class="info">${p.hints.map((x,i)=>`💡 ヒント${i+1}：${esc(x)}`).join('<br>')}</div>`:'';
+  const ask=isNarrator?`${secret}<div class="btns">${p.hints.length<(p.secretHints||[]).length?pAction('💡 次のヒントを公開','send({type:"soup_hint"})','alt'):''}${!p.entries.length&&!p.hints.length?pAction('🎲 難問を選ぶ','send({type:"soup_reroll",difficulty:4})','alt')+pAction('別の問題に変更','send({type:"soup_reroll"})','alt'):''}${pAction('真相を公開して終了','soupResolve(null)')}</div><p class="small">質問に「はい／いいえ／関係ありません」を返して、友達の推理を判定します。真相は公開ボタンを押すまで自分だけに表示されます。</p>`:
    `<label class="labeled" for="soup-text">はい／いいえで答えられる質問をしよう</label><textarea id="soup-text" class="field" rows="3" maxlength="180" oninput="partySoupText=this.value" placeholder="例：場所が重要ですか？ 登場人物は何かを勘違いしていますか？">${esc(partySoupText)}</textarea><div class="btns">${pAction('質問する','submitSoup("soup_ask")')}${pAction('真相を推理して発表','submitSoup("soup_solve")','gold')}</div>`;
-  partyTitle('MYSTERY / みんなで真相を探る','不可解な出来事の理由は？',top+hint+ask+`<h3>みんなの質問と回答 <span class="small">${p.entries.length}件</span></h3><div class="soup-log">${log||'<div class="info">質問をして、状況を絞り込もう！</div>'}</div>`);
+  partyTitle('MYSTERY / みんなで真相を探る','不可解な出来事の理由は？',top+soupExtras+hint+ask+`<h3>みんなの質問と回答 <span class="small">${p.entries.length}件</span></h3><div class="soup-log">${log||'<div class="info">質問をして、状況を絞り込もう！</div>'}</div>`);
  }else if(room.phase==='soup_reveal'){
   const winner=p.last.winner?`${esc(pName(p.last.winner))}さんが解明！`:'真相を公開しました';
   partyTitle('MYSTERY / 真相公開',winner,top+`<div class="soup-solution"><b>答え</b><p>${esc(p.solution)}</p></div><details class="party-detail"><summary>質問と回答を振り返る（${p.entries.length}件）</summary><div class="soup-log">${log}</div></details><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次の問題へ','send({type:"soup_next"})','gold'):''}</div>`);
@@ -121,3 +169,5 @@ function submitSoup(type){const v=(document.getElementById('soup-text')?.value||
 function soupReply(id,verdict){send({type:'soup_reply',id,verdict})}
 function soupReject(id){send({type:'soup_reject',id})}
 function soupResolve(index){if(confirm(index===null?'真相を公開して、この問題を終了しますか？':'この推理を正解として、問題を終了しますか？'))send({type:'soup_resolve',winner:index})}
+
+function submitMySoup(){const saved=NKM.games().filter(g=>g.game==='soup').slice(0,25);const ix=Number(document.getElementById('saved-soup')?.value||0),g=saved[ix];if(!g)return;const p=g.config;if(!confirm('今の問題を、自作の「'+g.title+'」に変更しますか？'))return;send({type:'soup_custom',puzzle:{title:g.title,situation:p.situation,solution:p.solution,hints:p.hints}})}
