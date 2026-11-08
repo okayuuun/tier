@@ -1,7 +1,7 @@
 'use strict';
 const app=document.getElementById('app');let ws=null,room=null,me=null,connectCode='',playerName='',pendingAction='',draft=null,connecting=false,retryTimer=null;let desiredGame='tier',topicDraft=null,selectedRound=0,activeCompare=null;
 const GAMES={tier:{title:'みんなでTier予想',icon:'🏆',desc:'人ごとに異なるお題！主役の並びを予想'},value:{title:'これって重い？',icon:'💗',desc:'本人の3段階の価値観を当てる'},either:{title:'究極の二択',icon:'⚖️',desc:'本人ならA/Bどちらを選ぶ？'},quiz:{title:'私の理解度クイズ',icon:'🎯',desc:'好みの答えを予想して理解度を競う'}};
-Object.assign(GAMES,{ito:{title:'ことばの数値リレー',icon:'🕸️',desc:'数字を例えて伝え、小さい順に出す協力ゲーム'},propose:{title:'ひと言プロポーズ',icon:'💍',desc:'6枚の単語を組み合わせて即興告白バトル'},soup:{title:'ひらめきのスープ',icon:'🔎',desc:'出題者に質問して、不思議な状況の真相を解こう'},akaito:{title:'アカイイト｜100になるペア',icon:'❤️',desc:'秘密の数字の合計が100に近い相手を探す'},unique:{title:'全員不一致チャレンジ',icon:'✨',desc:'同じお題に全員が違う言葉で答える協力ゲーム'}});
+Object.assign(GAMES,{ito:{title:'ことばの数値リレー',icon:'🕸️',desc:'数字を例えて伝え、小さい順に出す協力ゲーム'},propose:{title:'ひと言プロポーズ',icon:'💍',desc:'6枚の単語を組み合わせて即興告白バトル'},soup:{title:'ひらめきのスープ',icon:'🔎',desc:'出題者に質問して、不思議な状況の真相を解こう'},akaito:{title:'アカイイト｜100になるペア',icon:'❤️',desc:'秘密の数字の合計が100に近い相手を探す'},unique:{title:'全員不一致チャレンジ',icon:'✨',desc:'同じお題に全員が違う言葉で答える協力ゲーム'},wolf:{title:'ワードウルフ',icon:'🐺',desc:'自分だけ違う言葉を持つ少数派を会話から探す'}});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
