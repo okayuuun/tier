@@ -1,0 +1,30 @@
+name: Game syntax and smoke test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify Python files
+        run: python -m compileall -q live
+      - name: Verify JavaScript files
+        run: |
+          for f in live/public/*.js; do node --check "$f"; done
+      - name: Import game modules
+        run: |
+          cd live
+          python - <<'PY'
+          from party_modes import GAME_IDS, EVENTS
+          from master_admin import GAMES
+          assert {'unanimous','insider','secret_rank'} <= GAME_IDS
+          assert {'unanimous','insider','secret_rank'} <= set(GAMES)
+          assert {'un_answer','in_question','sr_order'} <= EVENTS
+          print('All three new games are registered')
+          PY
