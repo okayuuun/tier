@@ -58,6 +58,7 @@ function exIn(){
   if(!isMaster&&!p.myVote)body+='<div class="extra-grid">'+room.players.filter(x=>x.id!==me&&x.id!==p.master).map(x=>
      '<button class="extra-choice" onclick="exVote(\''+x.id+'\')">'+esc(x.name)+'に投票</button>').join('')+'</div>';
   else body+='<div class="info">投票待ち：'+p.votesCount+' / '+(room.active.length-1)+' 件</div>';
+  if(isOwner&&p.votesCount)body+='<div class="btns">'+pAction('現在の投票で集計','send({type:"in_force"})','alt')+'</div>';
   return partyTitle('VOTE / 正体を推理','誰が内通者？',head+body);
  }
  const last=p.last;
