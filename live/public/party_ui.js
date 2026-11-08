@@ -1,6 +1,6 @@
 'use strict';
 // Additional original party modes. The site intentionally uses its own decks and scenarios.
-const PARTY_GAMES=['ito','akaito','propose','soup','unique'];
+const PARTY_GAMES=['ito','akaito','propose','soup','unique','wolf'];
 let partyDraft={key:'',tokens:[]};
 let partyItoText='';
 let partySoupText='';
@@ -12,7 +12,9 @@ function partyStatusBar(p){return `<div class="party-status"><span>${esc(GAMES[r
 function partyTitle(sub,title,inner){app.innerHTML=panel(sub,title,roomBar()+inner+pError)}
 function partyPlayerList(){return `<div class="playergrid">${players()}</div>`}
 function partyFinal(){const p=room.party, owner=room.owner===me, game=room.game;let html='';
- if(game==='ito'){
+ if(game==='wolf'){
+  html=`<div class="party-hero">🐺 ワードウルフ最終結果<small>5ラウンドの合計</small></div><div class="party-standings">${[...room.players].sort((a,b)=>b.score-a.score).map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>${x.score}pt</b></div>`).join('')}</div>${p.history.map(r=>`<details class="party-detail"><summary>${r.round}回目 ${r.caught?'少数派を発見':'少数派の逃げ切り'}</summary><p>多数派：${esc(r.majority)} / 少数派：${esc(r.minority)} (${esc(r.wolfName)}さん)</p></details>`).join('')}`;
+ }else if(game==='ito'){
   const completed=p.rounds.filter(x=>x.success).length;html=`<div class="party-hero">${completed===p.maxStages?'🎉 みんなで脱出成功！':'✨ ここまでの結果'}<small>${completed} / ${p.maxStages}ステージ成功｜ライフ ${p.lives}</small></div><div class="party-stack">${p.rounds.map(r=>`<details class="party-detail"><summary>STAGE ${r.stage}：${esc(r.theme)}｜ライフ ${r.lives}</summary><p class="small">公開したカード：${r.played.map(x=>`${esc(x.name)} ${x.number}`).join(' → ')||'なし'}</p><p class="small">失ったカード：${r.discarded.map(x=>`${esc(x.name)} ${x.number}`).join('、')||'なし'}</p></details>`).join('')}</div>`;
  }else if(game==='akaito'){
   html=`<div class="party-hero">❤️ アカイイト最終結果<small>4ラウンドの総合得点</small></div><div class="party-standings">${[...room.players].sort((a,b)=>b.score-a.score).map((x,i)=>`<div class="party-score"><strong>${i+1}位 ${esc(x.name)}</strong><b>${x.score}pt</b></div>`).join('')}</div>${p.history.map(r=>`<details class="party-detail"><summary>${r.round}回目：${esc(r.theme)}</summary>${r.pairs.map(x=>`<p>${esc(x.leftName)} (${x.a}) ＋ ${esc(x.rightName)} (${x.b}) ＝ <b>${x.total}</b> / ${x.points}点</p>`).join('')||'<p>ペアなし</p>'}</details>`).join('')}`;
@@ -31,6 +33,7 @@ function renderParty(){if(!room || !PARTY_GAMES.includes(room.game))return;
  if(room.game==='ito')return renderIto();
  if(room.game==='akaito')return renderRedIto();
  if(room.game==='unique')return renderUnique();
+ if(room.game==='wolf')return renderWolf();
  if(room.game==='propose')return renderProposal();
  if(room.game==='soup')return renderSoup();
 }
@@ -155,7 +158,7 @@ function renderSoup(){const p=room.party,owner=room.owner===me,narrator=p.narrat
   return `<div class="soup-entry"><div><b>${esc(x.name)}</b> ${badge}</div><p>${esc(x.text)}</p><div>${reply}</div></div>`}).join('');
  if(room.phase==='soup_ask'){
   const secret=isNarrator?`<div class="soup-secret"><b>🔒 出題者だけに見える真相</b><p>${esc(p.solution)}</p><div class="soup-master-hints">${(p.secretHints||[]).map((x,i)=>`<div><b>ヒント${i+1}：</b>${esc(x)}</div>`).join('')}</div><details class="party-detail"><summary>🎓 出題者ガイド・重要な確認ポイント</summary>${(p.hostGuide||[]).map(x=>`<p>• ${esc(x)}</p>`).join('')}<h4>質問されたときの回答例</h4>${(p.hostQA||[]).map(x=>`<p><b>Q. ${esc(x.q)}</b><span> → ${esc(x.a)}</span></p>`).join('')}</details><details class="party-detail"><summary>📚 もっと凝った問題を探す（出題者専用）</summary><p class="small">有名な問題の本文や解答はここには転載していません。出題者が元サイトで利用条件を確認できます。</p><p><a href="https://www.umigame-quiz.com/collections/high-rated-umigame" target="_blank" rel="noopener noreferrer">高評価の公開問題集</a></p><p><a href="https://sui-hei.net/mondai" target="_blank" rel="noopener noreferrer">ラテシン問題集</a></p><p><a href="https://quizmondai.com/lateral-thinking/" target="_blank" rel="noopener noreferrer">ピコンクエストの問題集</a></p></details></div>`:'';
-  const library=NKM.games().filter(g=>g.game==='soup').slice(0,25);const soupExtras=isNarrator&&!p.entries.length&&!p.hints.length?`<details class="party-detail"><summary>📚 別の良問を使う・自作問題を出す</summary><p>高評価の問題は原作者の掲載元で確認できます。無断転載はせず、出題者が読んで進行するのがおすすめです。</p><div class="btns"><a href="https://www.umigame-quiz.com/collections/high-rated-umigame" target="_blank" rel="noopener noreferrer" class="btn alt">高評価問題集</a><a href="https://sui-hei.net/mondai" target="_blank" rel="noopener noreferrer" class="btn alt">ラテシン問題集</a><a href="https://www.de-bono.net/mondai/good" target="_blank" rel="noopener noreferrer" class="btn alt">解き心地から探す</a></div><p>自分で作った問題を出題する場合：</p>${library.length?`<select class="field" id="saved-soup">${library.map((g,i)=>`<option value="${i}">${esc(g.title)}</option>`).join('')}</select><div class="btns">${pAction('保存した謎を出題する','submitMySoup()','gold')}</div>`:'<p class="small">アトリエでウミガメのスープを作成・保存すると、ここから出題できます。</p>'}<a href="/studio" class="btn alt" style="display:inline-block;text-decoration:none">✏️ 出題用の謎を作る</a></details>`:'';
+  const library=NKM.games().filter(g=>g.game==='soup').slice(0,25);const soupExtras=isNarrator&&!p.entries.length&&!p.hints.length?`<details class="party-detail"><summary>📚 別の良問を使う・自作問題を出す</summary><p>高評価の問題は原作者の掲載元で確認できます。無断転載はせず、出題者が読んで進行するのがおすすめです。</p><div class="btns"><a href="https://www.umigame-quiz.com/collections/high-rated-umigame" target="_blank" rel="noopener noreferrer" class="btn alt">高評価問題集</a><a href="https://sui-hei.net/mondai" target="_blank" rel="noopener noreferrer" class="btn alt">ラテシン問題集</a><a href="https://www.de-bono.net/mondai/good" target="_blank" rel="noopener noreferrer" class="btn alt">解き心地から探す</a></div><div class="party-stack"><p class="small"><strong>評判のよい公開問題（原作者ページで読む）</strong></p><a target="_blank" rel="noopener noreferrer" href="https://www.umigame-quiz.com/problems/0a3ea349-ccd6-4383-940a-2e5c49f5a705">★ 叩き合う男女 — uon_ さん</a><a target="_blank" rel="noopener noreferrer" href="https://www.umigame-quiz.com/problems/ba915e68-7e9b-4eac-b5fe-b36722cb8f14">★ 突然の暴行 — あや さん</a><a target="_blank" rel="noopener noreferrer" href="https://www.umigame-quiz.com/problems/e9988d8f-2238-4b44-8a5d-a6a84c3a8915">★ 怪しい3人組 — Sokura さん</a><a target="_blank" rel="noopener noreferrer" href="https://www.umigame-quiz.com/problems/d6fc4795-3441-45ca-84ff-7ab40c26ea5e">★ 憂鬱な贈り物</a><a target="_blank" rel="noopener noreferrer" href="https://www.umigame-quiz.com/problems/defcdb23-da75-4f3f-94f9-4905a702ace0">★ サングラス</a></div><p>自分で作った問題を出題する場合：</p>${library.length?`<select class="field" id="saved-soup">${library.map((g,i)=>`<option value="${i}">${esc(g.title)}</option>`).join('')}</select><div class="btns">${pAction('保存した謎を出題する','submitMySoup()','gold')}</div>`:'<p class="small">アトリエでウミガメのスープを作成・保存すると、ここから出題できます。</p>'}<a href="/studio" class="btn alt" style="display:inline-block;text-decoration:none">✏️ 出題用の謎を作る</a></details>`:'';
    const hint=p.hints.length?`<div class="info">${p.hints.map((x,i)=>`💡 ヒント${i+1}：${esc(x)}`).join('<br>')}</div>`:'';
   const ask=isNarrator?`${secret}<div class="btns">${p.hints.length<(p.secretHints||[]).length?pAction('💡 次のヒントを公開','send({type:"soup_hint"})','alt'):''}${!p.entries.length&&!p.hints.length?pAction('🎲 難問を選ぶ','send({type:"soup_reroll",difficulty:4})','alt')+pAction('別の問題に変更','send({type:"soup_reroll"})','alt'):''}${pAction('真相を公開して終了','soupResolve(null)')}</div><p class="small">質問に「はい／いいえ／関係ありません」を返して、友達の推理を判定します。真相は公開ボタンを押すまで自分だけに表示されます。</p>`:
    `<label class="labeled" for="soup-text">はい／いいえで答えられる質問をしよう</label><textarea id="soup-text" class="field" rows="3" maxlength="180" oninput="partySoupText=this.value" placeholder="例：場所が重要ですか？ 登場人物は何かを勘違いしていますか？">${esc(partySoupText)}</textarea><div class="btns">${pAction('質問する','submitSoup("soup_ask")')}${pAction('真相を推理して発表','submitSoup("soup_solve")','gold')}</div>`;
@@ -171,3 +174,17 @@ function soupReject(id){send({type:'soup_reject',id})}
 function soupResolve(index){if(confirm(index===null?'真相を公開して、この問題を終了しますか？':'この推理を正解として、問題を終了しますか？'))send({type:'soup_resolve',winner:index})}
 
 function submitMySoup(){const saved=NKM.games().filter(g=>g.game==='soup').slice(0,25);const ix=Number(document.getElementById('saved-soup')?.value||0),g=saved[ix];if(!g)return;const p=g.config;if(!confirm('今の問題を、自作の「'+g.title+'」に変更しますか？'))return;send({type:'soup_custom',puzzle:{title:g.title,situation:p.situation,solution:p.solution,hints:p.hints}})}
+
+function renderWolf(){const p=room.party,owner=room.owner===me,other=room.players.filter(x=>x.id!==me);
+ const top=partyStatusBar(p)+`<div class="party-hero">🐺 あなたに配られた秘密のお題<small>会話の中で自分と違う言葉を持つ人を探そう</small><div class="wolf-word">${esc(p.myWord)}</div></div>`;
+ if(room.phase==='wolf_talk'){
+  const vote=p.myVote?`<div class="info">✅ 投票しました。ほかの人を待っています。</div>`:`<h3>誰が少数派だと思う？</h3><div class="red-players">${other.map(x=>`<button type="button" class="red-person" onclick="voteWolf('${x.id}')"><b>${esc(x.name)}さん</b><small>この人に投票する</small></button>`).join('')}</div>`;
+  return partyTitle('BLUFF / 少数派を探そう','会話して1人に投票',top+`<div class="info">自分の言葉を直接見せず、同じ言葉かどうか会話で確認しよう。自分への投票はできません。</div>${vote}<p>投票済み：${p.votedCount} / ${room.active.length}人</p>${owner&&p.votedCount>=2?pAction('集まった投票で判定する','send({type:"wolf_force"})','alt'):''}`);
+ }
+ if(room.phase==='wolf_guess')return partyTitle('BLUFF / 最後の逆転','少数派は多数派の言葉を当てよう',top+`<div class="info">投票で少数派が見つかりました。少数派の人は、多数派が持っている言葉を当てると逆転ボーナスがあります。</div>${p.canGuess?`<label class="labeled">多数派の言葉を予想して入力</label><div class="wolf-guess"><input class="field" id="wolf-guess-input" maxlength="60" placeholder="多数派の言葉は？"><div class="btns">${pAction('回答する','guessWolf()','gold')}</div></div>`:'<div class="info">少数派が多数派のお題を当てるまで待ちましょう。</div>'}`);
+ if(room.phase==='wolf_reveal'){
+  const r=p.last;return partyTitle('REVEAL / 結果発表',r.caught?'🐺 少数派を発見！':'🐺 少数派が逃げ切り！',top+`<div class="resultbadge center">多数派：${esc(r.majority)}<br>少数派：${esc(r.minority)}<br>少数派だったのは <b>${esc(r.wolfName)}さん</b></div><p>${r.caught?`多数派の言葉を当てて逆転：${r.wolfGuessed?'成功！':'失敗'}`:'少数派に投票が集まりませんでした。'}</p><div class="party-stack">${r.votes.map(x=>`<div class="party-detail">${esc(x.name)}さん → ${esc(pName(x.target))}さんに投票</div>`).join('')}</div><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次のラウンドへ','send({type:"wolf_next"})','gold'):''}</div>`)
+ }
+}
+function voteWolf(id){if(confirm('この人を少数派として投票しますか？'))send({type:'wolf_vote',target:id})}
+function guessWolf(){send({type:'wolf_guess',text:document.getElementById('wolf-guess-input')?.value||''})}
