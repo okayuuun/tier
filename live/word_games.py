@@ -9,17 +9,29 @@ def parse_format(value):
         raise ValueError('句の型は5と7を2〜6個入力してください')
     return [int(x) for x in value]
 def sample(pool,n):return secrets.SystemRandom().sample(pool,min(len(pool),n))
+def validate_deck(game, obj):
+    if not isinstance(obj,dict):raise ValueError('カードデータは種類別のリストにしてください')
+    keys=('bookTop','bookBottom') if game=='booktitle' else ('five','seven')
+    new={key:list(DATA[key]) for key in ('five','seven','bookTop','bookBottom')}
+    for key in keys:
+        values=obj.get(key)
+        if not isinstance(values,list) or not 2<=len(values)<=200 or any(not isinstance(x,str) or not 1<=len(x.strip())<=35 for x in values):
+            raise ValueError('カードは各種類2〜200語、1語35文字以内で登録してください')
+        new[key]=list(dict.fromkeys(x.strip() for x in values))
+        if len(new[key])<2:raise ValueError('異なる言葉を2つ以上登録してください')
+    return new
+
 def new_round(room):
-    p=room['word'];active=room['active']
+    p=room['word'];active=room['active'];bank=room.get('wordDeck') or DATA
     p['judge']=active[p['round']%len(active)] if room['game']!='booktitle' else None
     p.update(submitted={},votes={},last=None,hands={})
     if room['game']=='booktitle':
-        for pid in active:p['hands'][pid]={'top':sample(DATA['bookTop'],7),'bottom':sample(DATA['bookBottom'],7)}
+        for pid in active:p['hands'][pid]={'top':sample(bank['bookTop'],7),'bottom':sample(bank['bookBottom'],7)}
     else:
         for pid in active:
             if pid!=p['judge']:
-                p['hands'][pid]={'5':sample(DATA['five'],max(7,p['format'].count(5)+2)),
-                                 '7':sample(DATA['seven'],max(3,p['format'].count(7)+2))}
+                p['hands'][pid]={'5':sample(bank['five'],max(7,p['format'].count(5)+2)),
+                                 '7':sample(bank['seven'],max(3,p['format'].count(7)+2))}
     room['phase']='word_compose'
 def start(room):
     active=room['active'];game=room['game']
