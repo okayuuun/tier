@@ -479,8 +479,46 @@ async def task_ctx(app):
         pass
 
 
+# Temporary links for image-rich solo challenges; Render free instances lose these on restart.
+SHARED_CHALLENGES = {}
+SHARE_LIMIT = 48  # cap memory use on the free service
+SHARE_TTL_SECONDS = 36 * 3600
+
+async def create_shared_challenge(request):
+    if request.content_type != "application/json":
+        raise web.HTTPUnsupportedMediaType()
+    if request.content_length is not None and request.content_length > 750_000:
+        raise web.HTTPRequestEntityTooLarge(max_size=750_000, actual_size=request.content_length)
+    try:
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("v") not in (1, 2) or data.get("game") not in ("tier", "quiz", "either", "value", "soup"):
+            raise ValueError("無効な問題形式です")
+        encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > 650_000:
+            raise ValueError("問題セットが大きすぎます（650KBまで）")
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise web.HTTPBadRequest(text=str(exc)[:140])
+    now = time.time()
+    for key, value in list(SHARED_CHALLENGES.items()):
+        if now - value["at"] > SHARE_TTL_SECONDS:
+            SHARED_CHALLENGES.pop(key, None)
+    if len(SHARED_CHALLENGES) >= SHARE_LIMIT:
+        oldest = min(SHARED_CHALLENGES, key=lambda k: SHARED_CHALLENGES[k]["at"])
+        SHARED_CHALLENGES.pop(oldest, None)
+    token = secrets.token_urlsafe(18)
+    SHARED_CHALLENGES[token] = {"at": now, "data": data}
+    return web.json_response({"id": token, "temporary": True, "expiresInHours": 36}, headers={"Cache-Control": "no-store"})
+
+async def get_shared_challenge(request):
+    token = request.match_info["token"]
+    item = SHARED_CHALLENGES.get(token)
+    if not item or time.time() - item["at"] > SHARE_TTL_SECONDS:
+        SHARED_CHALLENGES.pop(token, None)
+        raise web.HTTPNotFound(text="共有した問題は期限切れか、サーバーの再起動で消えました")
+    return web.json_response({"data": item["data"]}, headers={"Cache-Control": "no-store"})
+
 app = web.Application()
-app.add_routes([web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
