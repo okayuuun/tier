@@ -23,8 +23,8 @@ EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
     "senryu": {"title": "昼ドラ川柳"},
-    "tanka": {"title": "57577（自由短歌）"},
-    "booktitle": {"title": "横暴編集長（タイトル遊び）"},
+    "tanka": {"title": "５７５７７（ゴーシチゴーシチシチ）"},
+    "booktitle": {"title": "横暴編集長"},
     "ito": {"title": "ことばの数値リレー"},
     "propose": {"title": "ひと言プロポーズ"},
     "akaito": {"title": "アカイイト｜100になるペア"},
