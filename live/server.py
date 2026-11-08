@@ -9,6 +9,7 @@ import secrets
 import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
+from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 
 ROOT = Path(__file__).parent
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -17,6 +18,9 @@ MAX_PLAYERS = 12
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
+    "ito": {"title": "ことばの数値リレー"},
+    "propose": {"title": "ひと言プロポーズ"},
+    "soup": {"title": "ひらめきのスープ"},
     "tier": {
         "title": "休日にいちばんやりたいこと",
         "items": ["ゲーム", "映画", "カラオケ", "旅行", "家でのんびり"],
@@ -79,6 +83,8 @@ def active_target(room):
 
 
 def room_snapshot(room, pid):
+    if room['game'] in PARTY_IDS and room['phase'] != 'lobby':
+        return party_snapshot(room, pid)
     target = active_target(room)
     phase = room["phase"]
     reveal = None
@@ -248,6 +254,12 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
+    if t in PARTY_EVENTS:
+        if room['game'] not in PARTY_IDS or room['phase'] == 'lobby':
+            raise ValueError('このゲームではまだその操作は使えません')
+        handle_party_event(room, pid, t, obj, is_owner)
+        await broadcast(room)
+        return
     if t == "configure":
         if not is_owner or phase != "lobby":
             raise ValueError("ルーム作成者が待機中に設定できます")
@@ -276,7 +288,10 @@ async def handle_event(ws, context, obj):
         room["matchNo"] += 1
         room["roundIndex"] = 0
         room["points"] = {p: 0 for p in room["players"]}
-        room["phase"] = "compose"
+        if room['game'] in PARTY_IDS:
+            start_party(room)
+        else:
+            room["phase"] = "compose"
     elif t == "example":
         if phase != "compose" or pid not in room["active"] or pid in room["topics"]:
             raise ValueError("今は例題を読み込めません")
@@ -363,6 +378,7 @@ async def handle_event(ws, context, obj):
         if not is_owner or phase != "final":
             raise ValueError("ルーム作成者だけがもう一度始められます")
         room["phase"] = "lobby"
+        room.pop('party', None)
         room["active"] = []
         room["playerConfigs"] = {}
         room["topics"] = {}
@@ -456,7 +472,7 @@ async def task_ctx(app):
 
 
 app = web.Application()
-app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
