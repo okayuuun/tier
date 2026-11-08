@@ -14,6 +14,11 @@ REFERENCE_PROBLEMS = [
     {'title':'突然の暴行','url':'https://www.umigame-quiz.com/problems/ba915e68-7e9b-4eac-b5fe-b36722cb8f14'},
     {'title':'怪しい3人組','url':'https://www.umigame-quiz.com/problems/e9988d8f-2238-4b44-8a5d-a6a84c3a8915'},
     {'title':'憂鬱な贈り物','url':'https://www.umigame-quiz.com/problems/d6fc4795-3441-45ca-84ff-7ab40c26ea5e'},
+    {'title':'迷惑な電話','url':'https://www.umigame-quiz.com/problems/0aa0513b-8c55-4205-96fc-511f6bf07a6c'},
+    {'title':'サングラス','url':'https://www.umigame-quiz.com/problems/defcdb23-da75-4f3f-94f9-4905a702ace0'},
+    {'title':'狂気の部屋','url':'https://www.umigame-quiz.com/problems/45a8b95c-26b8-499b-a494-9713b0fc5160'},
+    {'title':'立ち止まる女','url':'https://www.umigame-quiz.com/problems/b7944cc8-8b21-4124-8c79-5ba4fd48764f'},
+    {'title':'反則した男','url':'https://www.umigame-quiz.com/problems/930cb3ef-1869-4943-9792-ae52c2e46c85'},
 ]
 
 GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique', 'wolf'}
