@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
+from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
 from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start as studio_start, snapshot as studio_snapshot, public_meta as studio_meta, reveal as studio_reveal
 
 ROOT = Path(__file__).parent
@@ -28,6 +29,9 @@ CONFIGS = {
     "unanimous": {"title": "全員一致ゲーム"},
     "insider": {"title": "インサイダーゲーム"},
     "secret_rank": {"title": "シークレットランキング"},
+    "describe": {"title": "カタカナーシ（Webアレンジ）"},
+    "drawfake": {"title": "エセ芸術家ニューヨークへ行く（Webアレンジ）"},
+    "mysterymail": {"title": "謎解きメール"},
     "soup": {"title": "ひらめきのスープ"},
     "tier": {
         "title": "休日にいちばんやりたいこと",
@@ -99,6 +103,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in MORE_IDS and room['phase'] != 'lobby':
+        return more_snapshot(room, pid)
     if room['game'] in PARTY_IDS and room['phase'] != 'lobby':
         return party_snapshot(room, pid)
     target = active_target(room)
@@ -282,6 +288,12 @@ async def handle_event(ws, context, obj):
         studio_handle(room, pid, t, obj, is_owner)
         await broadcast(room)
         return
+    if t in MORE_EVENTS:
+        if room['game'] not in MORE_IDS or room['phase'] == 'lobby':
+            raise ValueError('このゲームではまだその操作は使えません')
+        more_handle(room, pid, t, obj, is_owner)
+        await broadcast(room)
+        return
     if t in PARTY_EVENTS:
         if room['game'] not in PARTY_IDS or room['phase'] == 'lobby':
             raise ValueError('このゲームではまだその操作は使えません')
@@ -321,6 +333,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in MORE_IDS:
+            more_start(room)
         elif room['game'] in PARTY_IDS:
             start_party(room)
         else:
@@ -490,7 +504,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
@@ -565,7 +579,12 @@ async def get_shared_challenge(request):
     return web.json_response({"data": item["data"]}, headers={"Cache-Control": "no-store"})
 
 app = web.Application()
-app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")),
+    web.get("/more_ui.js", lambda request: web.FileResponse(ROOT / "public" / "more_ui.js")),
+    web.get("/more_ui.css", lambda request: web.FileResponse(ROOT / "public" / "more_ui.css")),
+    web.get("/more_rules.js", lambda request: web.FileResponse(ROOT / "public" / "more_rules.js")),
+    web.get("/feedback.js", lambda request: web.FileResponse(ROOT / "public" / "feedback.js")),
+    web.get("/feedback.css", lambda request: web.FileResponse(ROOT / "public" / "feedback.css")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.add_routes([
     web.get("/master", lambda request: web.FileResponse(ROOT / "public" / "master.html")),
     web.get("/master.js", lambda request: web.FileResponse(ROOT / "public" / "master.js")),
