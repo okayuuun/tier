@@ -9,6 +9,11 @@ Object.assign(GAMES,{
   insider:{title:'インサイダーゲーム',icon:'🕵️',desc:'正解を知っている内通者を質問と投票で見つける'},
   secret_rank:{title:'シークレットランキング',icon:'🔐',desc:'主役の並びから秘密の評価基準を当てる'}
 });
+Object.assign(GAMES,{
+  describe:{title:'カタカナーシ（Webアレンジ）',icon:'💬',desc:'カタカナ語を使わず、言い換えてお題を伝える'},
+  drawfake:{title:'エセ芸術家ニューヨークへ行く（Webアレンジ）',icon:'🎨',desc:'お題を知らない1人を絵の線から見抜く'},
+  mysterymail:{title:'謎解きメール',icon:'📧',desc:'届いた連絡の手掛かりを協力して解く'}
+});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
@@ -55,6 +60,7 @@ function render(){
 if(!room)return landing();
 let phase=room.phase,owner=room.owner===me,top=roomBar();
 if(room.customMeta&&phase!=='lobby'){renderStudioLive();return}
+if(MORE_GAMES.includes(room.game)&&phase!=='lobby'){renderMore();return}
 if(PARTY_GAMES.includes(room.game)&&phase!=='lobby'){renderParty();return}
 if(phase==='lobby'){
   const choices=`<div class="cards">${Object.entries(GAMES).filter(([k])=>!room.publicGames||room.publicGames.includes(k)).map(([k,g])=>`<div class="game-option"><button class="card ${room.game===k?'on':''}" ${owner?'':'disabled'} onclick="chooseGame('${k}')"><span>${g.icon}</span><strong>${g.title}</strong><small>${g.desc}</small></button><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 遊び方を見る</button></div>`).join('')}</div>`;
