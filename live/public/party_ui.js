@@ -49,36 +49,51 @@ function renderIto(){const p=room.party,owner=room.owner===me,stage=p.stage,rema
 function submitItoClue(){const v=(document.getElementById('clue-input')?.value||partyItoText).trim();if(!v)return error('例えを入力してください');send({type:'ito_clue',text:v});}
 function playItoCard(){if(confirm('カードを出しますか？ 小さい数字がまだあるとライフが減ります。'))send({type:'ito_play'})}
 function proposalKey(){return `${room.code}:${room.matchNo}:${room.party.round}`}
-function proposalDraft(){const key=proposalKey();if(partyDraft.key!==key)partyDraft={key,tokens:[],baseSettings:Array.from({length:6},()=>({face:0,rotation:0}))};return partyDraft}
+function proposalDraft(){const key=proposalKey();if(partyDraft.key!==key)partyDraft={key,tokens:[],baseSettings:Array.from({length:6},()=>({face:0,rotation:0})),activeBase:0};return partyDraft}
 function proposalBasePhrase(card,state){const opts=card.faces[state.face]||card.faces[0];return opts[state.rotation%opts.length]}
 function proposalTokenPhrase(token,p){if(token.index<6)return proposalBasePhrase(p.starters[token.index],token);return p.hand[token.index-6]||''}
 function proposalAdd(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
  const settings=index<6?d.baseSettings[index]:{face:0,rotation:0};d.tokens.push({index,face:settings.face,rotation:settings.rotation});render();}
-function proposalFlip(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
- const x=d.baseSettings[index];const card=room.party.starters[index];x.face=(x.face+1)%card.faces.length;x.rotation=0;render();}
-function proposalRotate(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
- const x=d.baseSettings[index];x.rotation=(x.rotation+1)%room.party.starters[index].faces[x.face].length;render();}
+// Digital-first phrase editor: choose the actual phrase; there is no card-flipping control.
+function proposalOpenBase(index){const d=proposalDraft();if(index<0||index>=room.party.starters.length)return;d.activeBase=index;render()}
+function proposalChooseBase(index,face,rotation){const card=room.party.starters[index];if(!card||!card.faces[face]||typeof card.faces[face][rotation]!=='string')return;
+ const d=proposalDraft();d.baseSettings[index]={face,rotation};d.activeBase=index;
+ const token=d.tokens.find(t=>t.index===index);
+ if(token){token.face=face;token.rotation=rotation}else d.tokens.push({index,face,rotation});
+ render();}
 function proposalMove(pos,step){const d=proposalDraft();const target=pos+step;if(target<0||target>=d.tokens.length)return;[d.tokens[pos],d.tokens[target]]=[d.tokens[target],d.tokens[pos]];render()}
 function proposalRemove(pos){proposalDraft().tokens.splice(pos,1);render()}
 function proposalUndo(){proposalDraft().tokens.pop();render()}
 function proposalReset(){proposalDraft().tokens=[];render()}
-function proposalSubmit(){const d=proposalDraft();if(!d.tokens.length)return error('1枚以上のカードを使って文章を作ってください');send({type:'prop_submit',tokens:d.tokens})}
+function proposalSubmit(){const d=proposalDraft();if(!d.tokens.length)return error('1つ以上の言葉を選んで文章を作ってください');send({type:'prop_submit',tokens:d.tokens})}
 function proposalPick(pid){if(confirm(`${pName(pid)}さんの告白を選びますか？`))send({type:'prop_pick',winner:pid})}
-function proposalChip(index,text,tokens){const used=tokens.some(x=>x.index===index);return `<button type="button" class="party-chip ${used?'chosen':''}" ${used?'disabled':''} onclick="proposalAdd(${index})">${esc(text)}</button>`}
+function proposalChip(index,text,tokens){const used=tokens.some(x=>x.index===index);return `<button type="button" class="party-chip ${used?'chosen':''}" ${used?'disabled':''} onclick="proposalAdd(${index})">${used?'✓ ':''}${esc(text)}</button>`}
+function proposalBaseEditor(p,d){
+ const active=Math.min(Math.max(d.activeBase??0,0),p.starters.length-1);
+ const categories=p.starters.map((card,i)=>{
+  const chosen=d.tokens.find(x=>x.index===i),selected=chosen?proposalTokenPhrase(chosen,p):'タップして言葉を選ぶ';
+  const name=card.name.replace(/カード$/,'');
+  return `<button type="button" class="proposal-category ${active===i?'is-active':''} ${chosen?'is-added':''}" onclick="proposalOpenBase(${i})" aria-pressed="${active===i}"><span class="proposal-cat-head"><b>${esc(name)}</b><span>${chosen?'✓ 追加済み':'未選択'}</span></span><span class="proposal-cat-phrase">${esc(selected)}</span></button>`;
+ }).join('');
+ const current=p.starters[active],selected=d.tokens.find(x=>x.index===active),variants=[];
+ current.faces.forEach((face,fi)=>face.forEach((phrase,ri)=>variants.push({face:fi,rotation:ri,text:phrase})));
+ const choices=variants.map(x=>{const on=!!selected&&selected.face===x.face&&selected.rotation===x.rotation;
+  return `<button type="button" class="proposal-option ${on?'is-selected':''}" aria-pressed="${on}" onclick="proposalChooseBase(${active},${x.face},${x.rotation})"><span>${esc(x.text)}</span>${on?'<span aria-hidden="true" class="proposal-option-check">✓</span>':''}</button>`;
+ }).join('');
+ return `<section class="proposal-phrase-editor"><div class="proposal-section-title"><h3>✨ いつでも使える基本フレーズ</h3><p class="small">6つのカテゴリから好きな言葉を選ぶだけ。使った言葉も、タップし直せば変更できます。</p></div><div class="proposal-category-grid" role="group" aria-label="基本フレーズのカテゴリ">${categories}</div><div class="proposal-variants"><div class="proposal-variants-head"><strong>${esc(current.name.replace(/カード$/,''))}の候補</strong><small>${selected?'別の言葉を選ぶと文章も変わります':'タップすると文章に追加されます'}</small></div><div class="proposal-options" role="group" aria-label="${esc(current.name.replace(/カード$/,''))}の言葉一覧">${choices}</div></div></section>`;
+}
 function renderProposal(){const p=room.party,owner=room.owner===me,judge=p.judge,isJudge=judge===me;
- const top=partyStatusBar(p)+`<div class="party-hero">💌 今回の審査役：${esc(pName(judge))}<small>初期カードは何度でも使える。表裏と向きを選んで、自分だけの言葉を作ろう！</small></div><div class="party-standings">${room.players.map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>💍 ${p.rings[x.id]||0}/3</b></div>`).join('')}</div>`;
+ const top=partyStatusBar(p)+`<div class="party-hero">💌 今回の審査役：${esc(pName(judge))}<small>好きな言葉をタップして組み合わせるだけ。面白いプロポーズを作ろう！</small></div><div class="party-standings">${room.players.map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>💍 ${p.rings[x.id]||0}/3</b></div>`).join('')}</div>`;
  if(room.phase==='prop_compose'){
   if(isJudge)return partyTitle('LOVE / 作成中','みんなの告白を待とう',top+`<div class="info">今回はあなたが審査役！ 全員の告白からいちばん好きなものを選びます。</div><p class="small">提出済み：${p.submittedCount} / ${room.active.length-1}</p><div class="btns">${p.submittedCount?pAction('集まった告白を発表する','send({type:"prop_show"})','gold'):''}</div>`);
   if(p.submitted)return partyTitle('LOVE / 提出済み','審査を待とう',top+`<div class="info">✅ 告白を提出しました。みんなの提出を待っています。</div><p class="small">${p.submittedCount} / ${room.active.length-1}人が提出済み</p>`);
   const d=proposalDraft(),preview=d.tokens.map(x=>proposalTokenPhrase(x,p)).join(' ');
-  const picked=`<div class="proposal-selected">${d.tokens.length?d.tokens.map((x,i)=>`<div class="proposal-picked"><span>${i+1}. ${esc(proposalTokenPhrase(x,p))}</span><div class="picked-actions"><button aria-label="左へ移動" ${i===0?'disabled':''} onclick="proposalMove(${i},-1)">←</button><button aria-label="右へ移動" ${i===d.tokens.length-1?'disabled':''} onclick="proposalMove(${i},1)">→</button><button aria-label="このカードを外す" onclick="proposalRemove(${i})">×</button></div></div>`).join(''):'<div class="small">下のカードをタップして文章を作ってね。カードはすべて使わなくてもOK！</div>'}</div>`;
-  const starterCards=p.starters.map((card,i)=>{const state=d.baseSettings[i],phrase=proposalBasePhrase(card,state),used=d.tokens.some(x=>x.index===i),faces=card.faces[state.face]||[],four=faces.length>1;
-   return `<div class="base-card ${used?'base-used':''}"><div class="base-card-top"><span class="base-name">${esc(card.name)}</span><span class="base-side">${state.face?'裏':'表'} ${four?(state.rotation+1)+'/'+faces.length+'方向':'1方向'}</span></div><div class="base-phrase">${esc(phrase)}</div><div class="base-actions"><button type="button" ${used?'disabled':''} onclick="proposalFlip(${i})">↔ 裏返す</button><button type="button" ${used||!four?'disabled':''} onclick="proposalRotate(${i})">↻ 回す</button><button type="button" class="base-insert" ${used?'disabled':''} onclick="proposalAdd(${i})">${used?'使用中':'＋ 使う'}</button></div></div>`}).join('');
-  return partyTitle('LOVE / 単語を組み合わせる','オリジナルの告白を作ろう',top+
-  `<div class="proposal-composition"><small>あなたのプロポーズ</small><p>${esc(preview||'ここに選んだ言葉が並びます')}</p><small>最後は「結婚しよう！」と読み上げよう</small></div>${picked}`+
-  `<div class="proposal-section-title"><h3>♻️ 毎ターン使える初期カード6枚</h3><p class="small">表裏を切り替え、4方向カードは回してから「＋使う」を押そう。各カードは1回の告白で1度だけ使えます。</p></div><div class="base-card-grid">${starterCards}</div>`+
-  `<div class="proposal-section-title"><h3>🎲 今回だけのランダム単語カード6枚</h3><p class="small">毎ラウンド新しい6枚に入れ替わるよ。</p></div><div class="party-chips">${p.hand.map((x,i)=>proposalChip(i+6,x,d.tokens)).join('')}</div>`+
-  `<div class="btns">${pAction('1枚戻す','proposalUndo()','alt')}${pAction('最初から','proposalReset()','alt')}${pAction('この告白を提出する','proposalSubmit()','gold')}</div><p class="small">選んだ言葉の順番は矢印で入れ替えられます。Discord通話なら提出後に声に出して読んでみてね。</p>`);
+  const picked=`<div class="proposal-selected">${d.tokens.length?d.tokens.map((x,i)=>`<div class="proposal-picked"><span>${i+1}. ${esc(proposalTokenPhrase(x,p))}</span><div class="picked-actions"><button type="button" aria-label="左へ移動" ${i===0?'disabled':''} onclick="proposalMove(${i},-1)">←</button><button type="button" aria-label="右へ移動" ${i===d.tokens.length-1?'disabled':''} onclick="proposalMove(${i},1)">→</button><button type="button" aria-label="この言葉を外す" onclick="proposalRemove(${i})">×</button></div></div>`).join(''):'<div class="small">下から言葉を選ぶと、ここに追加されます。すべての言葉を使う必要はありません。</div>'}</div>`;
+  return partyTitle('LOVE / 言葉を組み合わせる','オリジナルの告白を作ろう',top+
+  `<div class="proposal-composition" aria-live="polite"><small>💌 あなたのプロポーズ <b>${d.tokens.length} / 12語</b></small><p>${esc(preview||'ここに選んだ言葉が表示されます')}</p><small>最後は「結婚しよう！」と読み上げよう</small></div>${picked}`+
+  proposalBaseEditor(p,d)+
+  `<div class="proposal-section-title"><h3>🎲 今回のランダムワード</h3><p class="small">毎ラウンド変わる6個の言葉。タップすると文章の末尾に追加されます。</p></div><div class="party-chips">${p.hand.map((x,i)=>proposalChip(i+6,x,d.tokens)).join('')}</div>`+
+  `<div class="btns">${pAction('1つ戻す','proposalUndo()','alt')}${pAction('すべて外す','proposalReset()','alt')}${pAction('この告白を提出する','proposalSubmit()','gold')}</div><p class="small">選んだ言葉は上の矢印で順番を入れ替え、×で取り消せます。</p>`);
  }
  const entries=`<div class="proposal-entries">${p.entries.map(x=>`<article class="proposal-entry"><b>${esc(x.name)}さん</b><p>${esc(x.text)} 結婚しよう！</p>${room.phase==='prop_judge'&&isJudge?pAction('💍 この人に指輪を贈る',`proposalPick('${x.pid}')`,'gold'):''}</article>`).join('')}</div>`;
  if(room.phase==='prop_judge')return partyTitle('LOVE / 審査タイム','いちばん心に響いた言葉は？',top+`${entries}${!isJudge?'<div class="info">審査役が1人を選ぶまでお待ちください。</div>':''}`);
