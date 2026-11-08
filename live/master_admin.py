@@ -117,9 +117,8 @@ class MasterAdmin:
                    for pid, p in room.get("players", {}).items()]
         details = {"type": "standard", "rounds": room.get("history", [])}
         if room.get("custom"):
-            s = room.get("studio", {})
             details = {"type": "studio", "title": room["custom"].get("title", ""),
-                       "history": s.get("history", []) if isinstance(s, dict) else []}
+                       "history": room.get("studioHistory", [])}
         elif room.get("party"):
             p = room["party"]
             details = {"type": "party", "rounds": p.get("history", p.get("rounds", [])),
