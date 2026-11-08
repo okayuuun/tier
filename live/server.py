@@ -533,6 +533,8 @@ async def create_shared_challenge(request):
         data = await request.json()
         if not isinstance(data, dict) or data.get("v") not in (1, 2) or data.get("game") not in ("tier", "quiz", "either", "value", "soup"):
             raise ValueError("無効な問題形式です")
+        if not MASTER.published(data["game"]):
+            raise web.HTTPForbidden(text="このゲームは非公開です")
         encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode("utf-8")) > 650_000:
             raise ValueError("問題セットが大きすぎます（650KBまで）")
@@ -555,6 +557,8 @@ async def get_shared_challenge(request):
     if not item or time.time() - item["at"] > SHARE_TTL_SECONDS:
         SHARED_CHALLENGES.pop(token, None)
         raise web.HTTPNotFound(text="共有した問題は期限切れか、サーバーの再起動で消えました")
+    if not MASTER.published(item["data"].get("game")):
+        raise web.HTTPForbidden(text="このゲームは非公開です")
     return web.json_response({"data": item["data"]}, headers={"Cache-Control": "no-store"})
 
 app = web.Application()
