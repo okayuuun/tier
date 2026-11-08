@@ -1,6 +1,6 @@
 'use strict';
 let PUBLIC_GAMES=null;
-function refreshVisibleCards(){document.querySelectorAll('[data-master-game]').forEach(el=>{el.hidden=!!PUBLIC_GAMES&&!PUBLIC_GAMES.includes(el.dataset.masterGame)})}
+function refreshVisibleCards(){document.querySelectorAll('[data-master-game]').forEach(el=>{el.style.display=(PUBLIC_GAMES&&!PUBLIC_GAMES.includes(el.dataset.masterGame))?'none':''})}
 const app=document.getElementById('app');let ws=null,room=null,me=null,connectCode='',playerName='',pendingAction='',draft=null,connecting=false,retryTimer=null;let desiredGame='tier',topicDraft=null,selectedRound=0,activeCompare=null;
 const GAMES={tier:{title:'みんなでティア表！',icon:'🏆',desc:'人ごとに異なるお題！主役の並びを予想'},value:{title:'これって重い？判定シート',icon:'💗',desc:'本人の3段階の価値観を当てる'},either:{title:'恋愛究極の２択',icon:'⚖️',desc:'本人ならA/Bどちらを選ぶ？'},quiz:{title:'理解度チェック',icon:'🎯',desc:'好みの答えを予想して理解度を競う'}};
 Object.assign(GAMES,{ito:{title:'ito（クモノイト）',icon:'🕸️',desc:'数字を例えて伝え、小さい順に出す協力ゲーム'},propose:{title:'たった今考えたプロポーズの言葉を君に捧ぐよ。',icon:'💍',desc:'6枚の単語を組み合わせて即興告白バトル'},soup:{title:'ウミガメのスープ',icon:'🔎',desc:'出題者に質問して、不思議な状況の真相を解こう'},akaito:{title:'ito（アカイイト）',icon:'❤️',desc:'秘密の数字の合計が100に近い相手を探す'},unique:{title:'全員不一致ゲーム',icon:'✨',desc:'同じお題に全員が違う言葉で答える協力ゲーム'},wolf:{title:'ワードウルフ',icon:'🐺',desc:'自分だけ違う言葉を持つ少数派を会話から探す'}});
