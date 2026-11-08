@@ -1,29 +1,37 @@
-/* 7-game visual rule walkthrough */
+/* Guided, illustrated rule book overlay. Avoid affecting the underlying game. */
 .rules-open body{overflow:hidden}
 .rules-overlay[hidden]{display:none!important}
-.rules-overlay{position:fixed;inset:0;z-index:2147480000;background:rgba(30,15,35,.75);display:flex;align-items:center;justify-content:center;padding:14px;overscroll-behavior:contain}
-.rules-window{background:#fffafe;color:#39283a;border-radius:22px;width:min(820px,100%);max-height:94dvh;overflow:hidden;box-shadow:0 26px 85px #210b27a0;display:flex;flex-direction:column;outline:none;font-family:system-ui,-apple-system,'Noto Sans JP',Meiryo,sans-serif}
-.rules-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff0f8;padding:12px 18px;border-bottom:1px solid #f2cddd;color:#983772;font-size:15px}
-.rules-close{background:#fff;border:1px solid #edbbd5;border-radius:11px;color:#97326c;min-width:40px;min-height:40px;cursor:pointer;font-size:20px}
-.rules-inner{min-height:0;overflow:auto;display:flex;flex-direction:column;overscroll-behavior:contain}
-.rules-steps{display:flex;align-items:center;justify-content:center;gap:10px;padding:15px 8px 6px}
-.rules-dot{border:2px solid #efb8d6;background:#fff;color:#a2497e;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;cursor:pointer;font-size:12px;font-weight:900}
-.rules-dot.on{background:#e73592;border-color:#e73592;color:white;box-shadow:0 0 0 4px #fce0ef}
-.rules-main{padding:7px clamp(14px,4vw,34px) 18px}
-.rules-progress{color:#b03d81;font-size:12px;font-weight:950;letter-spacing:.08em}
-.rules-main h2{font-size:clamp(21px,3.6vw,29px);line-height:1.35;color:#72305b;margin:9px 0 15px}
-.rules-picture{background:#fff7fc;border:1px solid #efccde;border-radius:14px;overflow:hidden}
-.rules-picture img{display:block;width:100%;height:auto;aspect-ratio:2/1;max-height:340px;object-fit:contain}
-.rules-desc{font-size:clamp(14px,1.9vw,17px);font-weight:650;line-height:1.8;margin:13px 0 10px;overflow-wrap:anywhere}
-.rules-hint{background:#fff5dc;border-left:4px solid #efc561;color:#876248;font-size:12px;line-height:1.7;padding:10px 13px;margin:0;border-radius:0 10px 10px 0}
-.rules-bottom{position:sticky;bottom:0;background:#fffafe;border-top:1px solid #f1d6e2;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;color:#876e80;font-size:13px}
-.rules-bottom button{min-height:43px;padding:10px 17px;border-radius:11px;font-size:14px;font-weight:900;cursor:pointer}
-.rules-back{border:1px solid #edbdd5;background:#fff0f8;color:#973c71}
-.rules-forward{border:1px solid #e73592;background:#e73592;color:#fff;min-width:116px}
-.rules-bottom button:disabled{opacity:.3;cursor:not-allowed}
-.game-card-shell{display:flex;flex-direction:column;gap:7px;min-width:0}
-.game-card-shell>.card{width:100%;flex:1;margin:0}
-.game-rule-btn{background:#fff;color:#a02b6e;border:1.5px solid #e9b2d1;border-radius:11px;padding:10px 12px;font-size:13px;font-weight:850;cursor:pointer}
-.game-rule-btn:hover{background:#fff0f8}
-.rules-dot:focus-visible,.rules-close:focus-visible,.rules-bottom button:focus-visible,.game-rule-btn:focus-visible{outline:3px solid #6251b9;outline-offset:2px}
-@media(max-width:600px){.rules-overlay{padding:7px}.rules-window{max-height:96dvh;border-radius:16px}.rules-bar{padding:10px 13px}.rules-steps{padding:10px 8px 4px}.rules-main{padding:6px 12px 12px}.rules-main h2{margin:8px 0 10px}.rules-picture img{max-height:235px}.rules-desc{line-height:1.65}.rules-bottom{padding:10px 12px}.rules-bottom button{padding:9px 12px}}
+.rules-overlay{position:fixed;inset:0;z-index:2147480000;background:rgba(37,20,39,.78);display:flex;align-items:center;justify-content:center;padding:18px;overscroll-behavior:contain}
+.rules-window{box-sizing:border-box;background:#fffafd;border:1px solid #f2c9dd;color:#35283b;border-radius:24px;box-shadow:0 22px 85px #210b277e;width:min(820px,100%);max-height:min(94dvh,900px);display:flex;flex-direction:column;overflow:hidden;outline:none;font-family:system-ui,-apple-system,'Noto Sans JP',Meiryo,sans-serif}
+.rules-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff0f8;border-bottom:1px solid #f1cbe1;padding:11px 19px;flex-shrink:0}
+.rules-brand{font-size:15px;font-weight:900;display:flex;gap:5px;align-items:center;flex-wrap:wrap;color:#9e3573}
+.rules-brand span{color:#86687d;font-size:12px}
+.rules-close{border:1px solid #eab7d3;border-radius:10px;background:#fff;color:#a43772;min-width:39px;min-height:39px;cursor:pointer;font-size:21px;font-weight:800}
+.rules-inner{overflow:auto;min-height:0;display:flex;flex-direction:column;overscroll-behavior:contain}
+.rules-steps{display:flex;justify-content:center;gap:12px;padding:16px 18px 5px;flex-shrink:0}
+.rules-dot{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;font-size:12px;font-weight:950;cursor:pointer;border:2px solid #e4bdd3;background:#fff;color:#9b5b7a;transition:background .1s ease}
+.rules-dot.done{background:#f8e1ef;border-color:#e99ec6}
+.rules-dot.on{background:#e73592;color:#fff;border-color:#e73592;box-shadow:0 0 0 4px #fbe0ed}
+.rules-main{padding:3px clamp(13px,4vw,38px) 18px}
+.rules-progress{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap;color:#a74579;font-size:12px;font-weight:950}
+.rules-progress b{color:#8c6e81;font-size:12px}
+.rules-main h2{font-size:clamp(20px,3.8vw,28px);line-height:1.35;letter-spacing:-.03em;margin:9px 0 12px;color:#71315a}
+.rules-picture{margin:0;background:#fff6fb;border:1px solid #eed2e3;border-radius:14px;overflow:hidden;line-height:0}
+.rules-picture img{width:100%;height:auto;max-height:370px;aspect-ratio:2/1;object-fit:contain;display:block}
+.rules-desc{font-size:clamp(14px,1.9vw,17px);line-height:1.8;font-weight:680;margin:14px 0 10px;white-space:normal;overflow-wrap:anywhere}
+.rules-hint{background:#fff3d8;border-left:4px solid #f1c566;color:#7f5b40;padding:10px 12px;border-radius:0 10px 10px 0;font-size:13px;font-weight:650;line-height:1.65;margin:0}
+.rules-bottom{position:sticky;bottom:0;background:#fffafd;border-top:1px solid #f3d9e7;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 22px 17px;margin-top:auto}
+.rules-bottom button{border:1px solid #e7bdd1;padding:11px 19px;border-radius:12px;min-height:44px;cursor:pointer;font-size:14px;font-weight:900}
+.rules-back{background:#fff1f7;color:#9e3472}
+.rules-forward{background:#e73592;color:white;border-color:#e73592!important;min-width:137px}
+.rules-bottom button:disabled{opacity:.32;cursor:not-allowed}
+.rules-page{font-size:13px;color:#95768a;font-weight:900;font-variant-numeric:tabular-nums}
+.rules-close:focus-visible,.rules-dot:focus-visible,.rules-bottom button:focus-visible,.game-rule-btn:focus-visible{outline:3px solid #6050cc;outline-offset:2px}
+.game-card-shell{min-width:0;display:flex;flex-direction:column;gap:7px}
+.game-card-shell>.card{width:100%;margin:0;flex:1}
+.game-card-shell>button.card{cursor:pointer}
+.game-rule-btn{background:white;color:#a12c70;border:1.5px solid #ebaed0;padding:9px 13px;min-height:39px;font-size:13px;font-weight:900;border-radius:12px;cursor:pointer;transition:background .1s ease}
+.game-rule-btn:hover{background:#fff1f9}
+.game-rule-btn-inline{align-self:flex-start}
+@media(max-width:600px){.rules-overlay{padding:8px}.rules-window{max-height:96dvh;border-radius:16px}.rules-steps{gap:8px;padding:11px 8px 4px}.rules-bar{padding:9px 13px}.rules-main{padding:2px 12px 12px}.rules-main h2{margin:8px 0 11px}.rules-picture img{max-height:240px}.rules-desc{line-height:1.65;margin:11px 0 9px}.rules-hint{font-size:12px;padding:8px 10px}.rules-bottom{padding:10px 12px 12px}.rules-bottom button{padding:9px 11px}.rules-forward{min-width:110px}}
+@media(prefers-reduced-motion:reduce){.rules-dot,.game-rule-btn{transition:none}}
