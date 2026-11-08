@@ -11,7 +11,7 @@ GAME_IDS = {'ito', 'propose', 'soup'}
 EVENTS = {
     'ito_clue', 'ito_play', 'ito_next', 'ito_redraw',
     'prop_submit', 'prop_show', 'prop_pick', 'prop_next',
-    'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next'
+    'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next', 'soup_reroll', 'soup_reject'
 }
 
 
@@ -88,7 +88,7 @@ def party_snapshot(room, pid):
     elif game=='propose':
         out.update(round=p['round'],roundLimit=p['roundLimit'],judge=p['judge'],rings=p['rings'],
                    hand=p['hands'].get(pid,[]) if phase=='prop_compose' else [],
-                   starters=DATA['proposalStarters'] if phase=='prop_compose' and pid != p['judge'] else [],
+                   starters=DATA['proposalBaseCards'] if phase=='prop_compose' and pid != p['judge'] else [],
                    submitted=pid in p['messages'],
                    submittedCount=len(p['messages']),
                    entries=([{'pid':x,'name':room['players'].get(x,{}).get('name','参加者'),'text':v} for x,v in p['messages'].items()]
@@ -98,7 +98,7 @@ def party_snapshot(room, pid):
     elif game=='soup':
         r=DATA['soup'][p['puzzleIndex']]
         out.update(round=p['round'],roundLimit=p['roundLimit'],narrator=p['narrator'],
-                   title=r['title'],situation=r['situation'],difficulty=r['difficulty'],
+                   title=r['title'],situation=r['situation'],difficulty=r['difficulty'],category=r.get('category','なぞ'),bankCount=len(DATA['soup']),
                    hints=r['hints'][:p['visibleHints']],entries=p['entries'][-85:],
                    solution=r['solution'] if phase in ('soup_reveal','final') or pid==p['narrator'] else None,
                    secretHints=r['hints'] if pid==p['narrator'] else None,
@@ -156,13 +156,33 @@ def handle_party_event(room,pid,typ,obj,is_owner):
         if typ=='prop_submit':
             if phase!='prop_compose' or pid==judge or pid in p['messages']:
                 raise ValueError('今はプロポーズを提出できません')
-            indexes=obj.get('indexes')
-            if not isinstance(indexes,list) or not 1<=len(indexes)<=12 or not all(type(i)==int and 0<=i<12 for i in indexes) or len(set(indexes))!=len(indexes):
-                raise ValueError('配られた単語を最大12枚まで並べてください')
-            hand=DATA['proposalStarters'] + p['hands'][pid]
-            p['messages'][pid]=''.join(hand[i] if i>=6 or hand[i] in ('だから','ずっと','お願い') else hand[i] for i in indexes)
-            # Delimit terms to keep Japanese word-card phrases readable.
-            p['messages'][pid]=' '.join(hand[i] for i in indexes) + '。'
+            tokens=obj.get('tokens', obj.get('indexes'))
+            if not isinstance(tokens,list) or not 1<=len(tokens)<=12:
+                raise ValueError('1〜12枚のカードを並べてください')
+            base=DATA['proposalBaseCards']
+            hand=p['hands'][pid]
+            used=set()
+            phrases=[]
+            for token in tokens:
+                if isinstance(token,int) and not isinstance(token,bool):
+                    idx,face,rotation=token,0,0
+                elif isinstance(token,dict):
+                    idx,face,rotation=token.get('index'),token.get('face',0),token.get('rotation',0)
+                else:
+                    raise ValueError('カードのデータが不正です')
+                if any(type(v) is not int for v in (idx,face,rotation)) or not 0<=idx<12 or idx in used:
+                    raise ValueError('同じカードは2回使えません')
+                used.add(idx)
+                if idx<6:
+                    card=base[idx]['faces']
+                    if not 0<=face<len(card) or not 0<=rotation<len(card[face]):
+                        raise ValueError('カードの向き・面が不正です')
+                    phrases.append(card[face][rotation])
+                else:
+                    if face or rotation:
+                        raise ValueError('単語カードは向きを変えられません')
+                    phrases.append(hand[idx-6])
+            p['messages'][pid]=' '.join(phrases) + '。'
             if len(p['messages'])>=len(active)-1:
                 room['phase']='prop_judge'
         elif typ=='prop_show':
@@ -189,7 +209,17 @@ def handle_party_event(room,pid,typ,obj,is_owner):
         else:raise ValueError('操作を認識できません')
     elif room['game']=='soup':
         narrator=p['narrator']
-        if typ in ('soup_ask','soup_solve'):
+        if typ=='soup_reroll':
+            if pid!=narrator or phase!='soup_ask' or p['entries'] or p['visibleHints']:
+                raise ValueError('質問が始まる前に、今回の出題者だけが変更できます')
+            used=set(p['riddles'][:p['round']])
+            previous=p['puzzleIndex']
+            candidates=[i for i in range(len(DATA['soup'])) if i not in used and i!=previous]
+            if candidates:
+                new_id=secrets.choice(candidates)
+                p['riddles'][p['round']]=new_id
+                new_soup_round(room)
+        elif typ in ('soup_ask','soup_solve'):
             if phase!='soup_ask' or pid==narrator:raise ValueError('出題者以外のプレイヤーが質問できます')
             v=str(obj.get('text','')).strip()[:180]
             if len(v)<2 or len(p['entries'])>=90:raise ValueError('質問の文字数や件数を確認してください')
@@ -202,9 +232,16 @@ def handle_party_event(room,pid,typ,obj,is_owner):
             if type(i) is not int or i<0 or i>=len(p['entries']) or p['entries'][i]['kind']!='ask' or verdict not in ('yes','no','irrelevant'):
                 raise ValueError('質問への回答を選んでください')
             p['entries'][i]['verdict']=verdict
+        elif typ=='soup_reject':
+            if phase!='soup_ask' or pid!=narrator:
+                raise ValueError('出題者だけが判定できます')
+            i=obj.get('id')
+            if type(i) is not int or not 0<=i<len(p['entries']) or p['entries'][i]['kind']!='solve':
+                raise ValueError('正しい推理を選んでください')
+            p['entries'][i]['verdict']='wrong'
         elif typ=='soup_hint':
             if phase!='soup_ask' or pid!=narrator:raise ValueError('ヒントを出せるのは出題者です')
-            p['visibleHints']=min(2,p['visibleHints']+1)
+            p['visibleHints']=min(len(DATA['soup'][p['puzzleIndex']]['hints']),p['visibleHints']+1)
         elif typ=='soup_resolve':
             if phase!='soup_ask' or pid!=narrator:raise ValueError('出題者が真相を公開できます')
             winner=obj.get('winner')
