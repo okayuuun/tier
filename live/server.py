@@ -472,7 +472,7 @@ async def task_ctx(app):
 
 
 app = web.Application()
-app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
