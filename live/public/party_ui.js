@@ -49,42 +49,60 @@ function renderIto(){const p=room.party,owner=room.owner===me,stage=p.stage,rema
 function submitItoClue(){const v=(document.getElementById('clue-input')?.value||partyItoText).trim();if(!v)return error('例えを入力してください');send({type:'ito_clue',text:v});}
 function playItoCard(){if(confirm('カードを出しますか？ 小さい数字がまだあるとライフが減ります。'))send({type:'ito_play'})}
 function proposalKey(){return `${room.code}:${room.matchNo}:${room.party.round}`}
-function proposalDraft(){const key=proposalKey();if(partyDraft.key!==key)partyDraft={key,tokens:[]};return partyDraft;}
-function proposalChip(i,text,arr){const used=arr.includes(i);return `<button type="button" class="party-chip ${used?'chosen':''}" ${used?'disabled':''} onclick="proposalAdd(${i})">${esc(text)}</button>`}
+function proposalDraft(){const key=proposalKey();if(partyDraft.key!==key)partyDraft={key,tokens:[],baseSettings:Array.from({length:6},()=>({face:0,rotation:0}))};return partyDraft}
+function proposalBasePhrase(card,state){const opts=card.faces[state.face]||card.faces[0];return opts[state.rotation%opts.length]}
+function proposalTokenPhrase(token,p){if(token.index<6)return proposalBasePhrase(p.starters[token.index],token);return p.hand[token.index-6]||''}
+function proposalAdd(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
+ const settings=index<6?d.baseSettings[index]:{face:0,rotation:0};d.tokens.push({index,face:settings.face,rotation:settings.rotation});render();}
+function proposalFlip(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
+ const x=d.baseSettings[index];const card=room.party.starters[index];x.face=(x.face+1)%card.faces.length;x.rotation=0;render();}
+function proposalRotate(index){const d=proposalDraft();if(d.tokens.some(t=>t.index===index))return;
+ const x=d.baseSettings[index];x.rotation=(x.rotation+1)%room.party.starters[index].faces[x.face].length;render();}
+function proposalMove(pos,step){const d=proposalDraft();const target=pos+step;if(target<0||target>=d.tokens.length)return;[d.tokens[pos],d.tokens[target]]=[d.tokens[target],d.tokens[pos]];render()}
+function proposalRemove(pos){proposalDraft().tokens.splice(pos,1);render()}
+function proposalUndo(){proposalDraft().tokens.pop();render()}
+function proposalReset(){proposalDraft().tokens=[];render()}
+function proposalSubmit(){const d=proposalDraft();if(!d.tokens.length)return error('1枚以上のカードを使って文章を作ってください');send({type:'prop_submit',tokens:d.tokens})}
+function proposalPick(pid){if(confirm(`${pName(pid)}さんの告白を選びますか？`))send({type:'prop_pick',winner:pid})}
+function proposalChip(index,text,tokens){const used=tokens.some(x=>x.index===index);return `<button type="button" class="party-chip ${used?'chosen':''}" ${used?'disabled':''} onclick="proposalAdd(${index})">${esc(text)}</button>`}
 function renderProposal(){const p=room.party,owner=room.owner===me,judge=p.judge,isJudge=judge===me;
- const top=partyStatusBar(p)+`<div class="party-hero">💌 今回の審査役：${esc(pName(judge))}<small>言葉を組み合わせて、審査役に響くプロポーズを作ろう</small></div><div class="party-standings">${room.players.map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>💍 ${p.rings[x.id]||0}/3</b></div>`).join('')}</div>`;
+ const top=partyStatusBar(p)+`<div class="party-hero">💌 今回の審査役：${esc(pName(judge))}<small>初期カードは何度でも使える。表裏と向きを選んで、自分だけの言葉を作ろう！</small></div><div class="party-standings">${room.players.map(x=>`<div class="party-score"><strong>${esc(x.name)}</strong><b>💍 ${p.rings[x.id]||0}/3</b></div>`).join('')}</div>`;
  if(room.phase==='prop_compose'){
-  if(isJudge){return partyTitle('LOVE / 作成中','みんなの告白を待とう',top+`<div class="info">今回はあなたが審査役！ 全員の発表から一番好きな言葉を選びます。</div><p class="small">提出済み：${p.submittedCount} / ${room.active.length-1}</p><div class="btns">${p.submittedCount?pAction('集まった告白を発表する','send({type:"prop_show"})','gold'):''}</div>`)}
-  if(p.submitted)return partyTitle('LOVE / 提出済み','審査を待とう',top+`<div class="info">✅ 告白を送信しました。ほかの人が提出するまで待ちましょう。</div><p class="small">${p.submittedCount} / ${room.active.length-1}人が提出済み</p>`);
-  const d=proposalDraft(),hand=[...p.starters,...p.hand],preview=d.tokens.map(i=>hand[i]).join(' ');
-  return partyTitle('LOVE / 言葉を並べる','オリジナルの告白を作ろう',top+`<div class="proposal-composition"><small>あなたのプロポーズ</small><p>${esc(preview||'カードをタップして、好きな順番に並べてください')}</p><small>最後は「結婚しよう！」と読み上げよう</small></div><h3>何度でも使える6枚</h3><div class="party-chips">${p.starters.map((x,i)=>proposalChip(i,x,d.tokens)).join('')}</div><h3>今回だけのランダム6枚</h3><div class="party-chips">${p.hand.map((x,i)=>proposalChip(i+6,x,d.tokens)).join('')}</div><div class="btns">${pAction('1枚戻す','proposalUndo()','alt')}${pAction('最初から','proposalReset()','alt')}${pAction('この告白を提出する','proposalSubmit()','gold')}</div><p class="small">カードはすべて使う必要はありません。通話中なら、送信後に声に出して読んでみましょう。公式に近い10秒チャレンジは、仲間とカウントして遊べます。</p>`);
+  if(isJudge)return partyTitle('LOVE / 作成中','みんなの告白を待とう',top+`<div class="info">今回はあなたが審査役！ 全員の告白からいちばん好きなものを選びます。</div><p class="small">提出済み：${p.submittedCount} / ${room.active.length-1}</p><div class="btns">${p.submittedCount?pAction('集まった告白を発表する','send({type:"prop_show"})','gold'):''}</div>`);
+  if(p.submitted)return partyTitle('LOVE / 提出済み','審査を待とう',top+`<div class="info">✅ 告白を提出しました。みんなの提出を待っています。</div><p class="small">${p.submittedCount} / ${room.active.length-1}人が提出済み</p>`);
+  const d=proposalDraft(),preview=d.tokens.map(x=>proposalTokenPhrase(x,p)).join(' ');
+  const picked=`<div class="proposal-selected">${d.tokens.length?d.tokens.map((x,i)=>`<div class="proposal-picked"><span>${i+1}. ${esc(proposalTokenPhrase(x,p))}</span><div class="picked-actions"><button aria-label="左へ移動" ${i===0?'disabled':''} onclick="proposalMove(${i},-1)">←</button><button aria-label="右へ移動" ${i===d.tokens.length-1?'disabled':''} onclick="proposalMove(${i},1)">→</button><button aria-label="このカードを外す" onclick="proposalRemove(${i})">×</button></div></div>`).join(''):'<div class="small">下のカードをタップして文章を作ってね。カードはすべて使わなくてもOK！</div>'}</div>`;
+  const starterCards=p.starters.map((card,i)=>{const state=d.baseSettings[i],phrase=proposalBasePhrase(card,state),used=d.tokens.some(x=>x.index===i),faces=card.faces[state.face]||[],four=faces.length>1;
+   return `<div class="base-card ${used?'base-used':''}"><div class="base-card-top"><span class="base-name">${esc(card.name)}</span><span class="base-side">${state.face?'裏':'表'} ${four?(state.rotation+1)+'/'+faces.length+'方向':'1方向'}</span></div><div class="base-phrase">${esc(phrase)}</div><div class="base-actions"><button type="button" ${used?'disabled':''} onclick="proposalFlip(${i})">↔ 裏返す</button><button type="button" ${used||!four?'disabled':''} onclick="proposalRotate(${i})">↻ 回す</button><button type="button" class="base-insert" ${used?'disabled':''} onclick="proposalAdd(${i})">${used?'使用中':'＋ 使う'}</button></div></div>`}).join('');
+  return partyTitle('LOVE / 単語を組み合わせる','オリジナルの告白を作ろう',top+
+  `<div class="proposal-composition"><small>あなたのプロポーズ</small><p>${esc(preview||'ここに選んだ言葉が並びます')}</p><small>最後は「結婚しよう！」と読み上げよう</small></div>${picked}`+
+  `<div class="proposal-section-title"><h3>♻️ 毎ターン使える初期カード6枚</h3><p class="small">表裏を切り替え、4方向カードは回してから「＋使う」を押そう。各カードは1回の告白で1度だけ使えます。</p></div><div class="base-card-grid">${starterCards}</div>`+
+  `<div class="proposal-section-title"><h3>🎲 今回だけのランダム単語カード6枚</h3><p class="small">毎ラウンド新しい6枚に入れ替わるよ。</p></div><div class="party-chips">${p.hand.map((x,i)=>proposalChip(i+6,x,d.tokens)).join('')}</div>`+
+  `<div class="btns">${pAction('1枚戻す','proposalUndo()','alt')}${pAction('最初から','proposalReset()','alt')}${pAction('この告白を提出する','proposalSubmit()','gold')}</div><p class="small">選んだ言葉の順番は矢印で入れ替えられます。Discord通話なら提出後に声に出して読んでみてね。</p>`);
  }
  const entries=`<div class="proposal-entries">${p.entries.map(x=>`<article class="proposal-entry"><b>${esc(x.name)}さん</b><p>${esc(x.text)} 結婚しよう！</p>${room.phase==='prop_judge'&&isJudge?pAction('💍 この人に指輪を贈る',`proposalPick('${x.pid}')`,'gold'):''}</article>`).join('')}</div>`;
  if(room.phase==='prop_judge')return partyTitle('LOVE / 審査タイム','いちばん心に響いた言葉は？',top+`${entries}${!isJudge?'<div class="info">審査役が1人を選ぶまでお待ちください。</div>':''}`);
  if(room.phase==='prop_reveal')return partyTitle('LOVE / 結果発表','💍 指輪をもらったのは…',top+`<div class="party-hero">${esc(p.last.winnerName)}さん！<small>今回の審査役：${esc(pName(p.last.judge))}</small></div>${entries}<div class="btns">${owner?pAction(Math.max(...Object.values(p.rings))>=3||p.round+1>=p.roundLimit?'最終結果へ':'次の審査役へ','send({type:"prop_next"})','gold'):''}</div>`);
 }
-function proposalAdd(i){let d=proposalDraft();if(!d.tokens.includes(i)){d.tokens.push(i);render()}}
-function proposalUndo(){proposalDraft().tokens.pop();render()}
-function proposalReset(){proposalDraft().tokens=[];render()}
-function proposalSubmit(){const d=proposalDraft();if(!d.tokens.length)return error('1枚以上のカードを使って文章を作ってください');send({type:'prop_submit',indexes:d.tokens})}
-function proposalPick(pid){if(confirm(`${pName(pid)}さんの告白を選びますか？`))send({type:'prop_pick',winner:pid})}
 function renderSoup(){const p=room.party,owner=room.owner===me,narrator=p.narrator,isNarrator=narrator===me;
- const top=partyStatusBar(p)+`<div class="party-hero">🔎 ${esc(p.title)}<small>${esc(p.situation)}</small></div><div class="party-meta"><span>難易度 ${'★'.repeat(p.difficulty)}</span><span>今回の出題者：${esc(pName(narrator))}</span></div>`;
- const log=p.entries.map(x=>{const badge=x.kind==='ask'?'<span class="tiny-pill">質問</span>':'<span class="tiny-pill warn">推理を発表</span>';
- const reply=x.kind==='ask'?(x.verdict?`<span class="verdict ${x.verdict}">${{yes:'はい',no:'いいえ',irrelevant:'関係ありません'}[x.verdict]}</span>`:(isNarrator&&room.phase==='soup_ask'?`<div class="reply-buttons">${[['yes','はい'],['no','いいえ'],['irrelevant','関係ない']].map(([v,t])=>pAction(t,`soupReply(${x.id},'${v}')`,'alt')).join('')}</div>`:'<small>回答待ち</small>')):
- (isNarrator&&room.phase==='soup_ask'?pAction('✅ この推理を正解とする',`soupResolve(${x.id})`,'gold'):'<small>出題者が判定します</small>');
- return `<div class="soup-entry"><div><b>${esc(x.name)}</b> ${badge}</div><p>${esc(x.text)}</p><div>${reply}</div></div>`}).join('');
+ const top=partyStatusBar(p)+`<div class="party-hero">🔎 ${esc(p.title)}<small>${esc(p.situation)}</small></div><div class="party-meta"><span>${esc(p.category||'謎解き')} · 難易度 ${'★'.repeat(p.difficulty)}</span><span>出題者：${esc(pName(narrator))}</span><span>問題ストック ${p.bankCount||'多数'}問</span></div>`;
+ const log=p.entries.map(x=>{const badge=x.kind==='ask'?'<span class="tiny-pill">質問</span>':'<span class="tiny-pill warn">真相の推理</span>';
+  let reply='';
+  if(x.kind==='ask')reply=x.verdict?`<span class="verdict ${x.verdict}">${{yes:'はい',no:'いいえ',irrelevant:'関係ありません'}[x.verdict]||esc(x.verdict)}</span>`:(isNarrator&&room.phase==='soup_ask'?`<div class="reply-buttons">${[['yes','はい'],['no','いいえ'],['irrelevant','関係ない']].map(([v,t])=>pAction(t,`soupReply(${x.id},'${v}')`,'alt')).join('')}</div>`:'<small>出題者の回答待ち</small>');
+  else reply=x.verdict==='wrong'?'<span class="verdict no">まだ正解ではありません</span>':(isNarrator&&room.phase==='soup_ask'?`<div class="reply-buttons">${pAction('✅ 正解にする',`soupResolve(${x.id})`,'gold')}${x.verdict!=='wrong'?pAction('惜しい・不正解',`soupReject(${x.id})`,'alt'):''}</div>`:'<small>出題者が判定します</small>');
+  return `<div class="soup-entry"><div><b>${esc(x.name)}</b> ${badge}</div><p>${esc(x.text)}</p><div>${reply}</div></div>`}).join('');
  if(room.phase==='soup_ask'){
-  const secret=isNarrator?`<div class="soup-secret"><b>🔒 出題者だけに見える真相</b><p>${esc(p.solution)}</p>${p.secretHints.map((x,i)=>`<small>ヒント${i+1}：${esc(x)}</small>`).join('')}</div>`:'';
+  const secret=isNarrator?`<div class="soup-secret"><b>🔒 出題者だけに見える真相</b><p>${esc(p.solution)}</p><div class="soup-master-hints">${(p.secretHints||[]).map((x,i)=>`<div><b>ヒント${i+1}：</b>${esc(x)}</div>`).join('')}</div></div>`:'';
   const hint=p.hints.length?`<div class="info">${p.hints.map((x,i)=>`💡 ヒント${i+1}：${esc(x)}`).join('<br>')}</div>`:'';
-  const ask=isNarrator?`${secret}<div class="btns">${p.hints.length<2?pAction('💡 みんなに次のヒントを出す','send({type:"soup_hint"})','alt'):''}${pAction('真相を公開して終了','soupResolve(null)')}</div><p class="small">回答したい質問の「はい／いいえ／関係ない」を押してください。最後に正解の推理を選ぶか、答えを公開できます。</p>`:
-  `<label class="labeled" for="soup-text">はい／いいえで答えられる質問をしよう</label><textarea id="soup-text" class="field" rows="3" maxlength="180" oninput="partySoupText=this.value" placeholder="例：登場人物は一人ですか？">${esc(partySoupText)}</textarea><div class="btns">${pAction('質問する','submitSoup("soup_ask")')}${pAction('真相を推理して発表','submitSoup("soup_solve")','gold')}</div>`;
-  partyTitle('MYSTERY / 質問で解き明かす','不思議な状況の真相は？',top+hint+ask+`<h3>みんなの質問と回答 <span class="small">${p.entries.length}件</span></h3><div class="soup-log">${log||'<div class="info">まだ質問がありません。気になることを質問してみよう！</div>'}</div>`);
+  const ask=isNarrator?`${secret}<div class="btns">${p.hints.length<(p.secretHints||[]).length?pAction('💡 次のヒントを公開','send({type:"soup_hint"})','alt'):''}${!p.entries.length&&!p.hints.length?pAction('🎲 別の問題に変更','send({type:"soup_reroll"})','alt'):''}${pAction('真相を公開して終了','soupResolve(null)')}</div><p class="small">質問に「はい／いいえ／関係ありません」を返して、友達の推理を判定します。真相は公開ボタンを押すまで自分だけに表示されます。</p>`:
+   `<label class="labeled" for="soup-text">はい／いいえで答えられる質問をしよう</label><textarea id="soup-text" class="field" rows="3" maxlength="180" oninput="partySoupText=this.value" placeholder="例：場所が重要ですか？ 登場人物は何かを勘違いしていますか？">${esc(partySoupText)}</textarea><div class="btns">${pAction('質問する','submitSoup("soup_ask")')}${pAction('真相を推理して発表','submitSoup("soup_solve")','gold')}</div>`;
+  partyTitle('MYSTERY / みんなで真相を探る','不可解な出来事の理由は？',top+hint+ask+`<h3>みんなの質問と回答 <span class="small">${p.entries.length}件</span></h3><div class="soup-log">${log||'<div class="info">質問をして、状況を絞り込もう！</div>'}</div>`);
  }else if(room.phase==='soup_reveal'){
   const winner=p.last.winner?`${esc(pName(p.last.winner))}さんが解明！`:'真相を公開しました';
-  partyTitle('MYSTERY / 真相公開',winner,top+`<div class="soup-solution"><b>答え</b><p>${esc(p.solution)}</p></div><details class="party-detail"><summary>これまでの質問を振り返る（${p.entries.length}件）</summary><div class="soup-log">${log}</div></details><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次の問題へ','send({type:"soup_next"})','gold'):''}</div>`);
+  partyTitle('MYSTERY / 真相公開',winner,top+`<div class="soup-solution"><b>答え</b><p>${esc(p.solution)}</p></div><details class="party-detail"><summary>質問と回答を振り返る（${p.entries.length}件）</summary><div class="soup-log">${log}</div></details><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次の問題へ','send({type:"soup_next"})','gold'):''}</div>`);
  }
 }
 function submitSoup(type){const v=(document.getElementById('soup-text')?.value||partySoupText).trim();if(v.length<2)return error('質問を入力してください');partySoupText='';send({type,text:v})}
 function soupReply(id,verdict){send({type:'soup_reply',id,verdict})}
-function soupResolve(index){if(confirm(index===null?'正解を公開して、この問題を終了しますか？':'この推理を正解として、問題を終了しますか？'))send({type:'soup_resolve',winner:index})}
+function soupReject(id){send({type:'soup_reject',id})}
+function soupResolve(index){if(confirm(index===null?'真相を公開して、この問題を終了しますか？':'この推理を正解として、問題を終了しますか？'))send({type:'soup_resolve',winner:index})}
