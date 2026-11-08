@@ -490,7 +490,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
