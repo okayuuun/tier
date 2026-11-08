@@ -1,6 +1,7 @@
 'use strict';
 const app=document.getElementById('app');let ws=null,room=null,me=null,connectCode='',playerName='',pendingAction='',draft=null,connecting=false,retryTimer=null;let desiredGame='tier',topicDraft=null,selectedRound=0,activeCompare=null;
 const GAMES={tier:{title:'みんなでTier予想',icon:'🏆',desc:'人ごとに異なるお題！主役の並びを予想'},value:{title:'これって重い？',icon:'💗',desc:'本人の3段階の価値観を当てる'},either:{title:'究極の二択',icon:'⚖️',desc:'本人ならA/Bどちらを選ぶ？'},quiz:{title:'私の理解度クイズ',icon:'🎯',desc:'好みの答えを予想して理解度を競う'}};
+Object.assign(GAMES,{ito:{title:'ことばの数値リレー',icon:'🕸️',desc:'数字を例えて伝え、小さい順に出す協力ゲーム'},propose:{title:'ひと言プロポーズ',icon:'💍',desc:'6枚の単語を組み合わせて即興告白バトル'},soup:{title:'ひらめきのスープ',icon:'🔎',desc:'出題者に質問して、不思議な状況の真相を解こう'}});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
@@ -46,11 +47,12 @@ function leaveToTitle(){
 function render(){
 if(!room)return landing();
 let phase=room.phase,owner=room.owner===me,top=roomBar();
+if(PARTY_GAMES.includes(room.game)&&phase!=='lobby'){renderParty();return}
 if(phase==='lobby'){
   const choices=`<div class="cards">${Object.entries(GAMES).map(([k,g])=>`<button class="card ${room.game===k?'on':''}" ${owner?'':'disabled'} onclick="chooseGame('${k}')"><span>${g.icon}</span><strong>${g.title}</strong><small>${g.desc}</small></button>`).join('')}</div>`;
   const modes=`<h3>お題の配布方法</h3><div class="modegrid"><button class="mode ${room.tierMode==='self'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('self')"><strong>✍️ 自分で作って、自分で答える</strong><small>参加者全員が自由にお題と5つの選択肢を考え、自分の作ったTier表に答える</small></button><button class="mode ${room.tierMode==='shuffle'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('shuffle')"><strong>🎲 みんなのお題をシャッフル</strong><small>全員が作ったお題を、必ず作成者以外の誰かにランダムで1つずつ配る</small></button></div><div class="notice">全員が各自のお題を作成するか、例題からランダム読み込みできます。${room.game==='tier'?'Tier表を1題':'5問のクイズセット'}を作成します。</div>`;
   const buttons=owner?`<div class="btns">${action('ゲーム開始 →','startGame()')}</div>`:`<div class="info">ルーム作成者がゲームを選んで開始するまでお待ちください。</div>`;
-  app.innerHTML=panel('WAITING ROOM / ゲーム待機中','みんなが集まったらスタート',top+`<div class="kicker">参加メンバー (${room.players.length}人)</div><div class="playergrid">${players()}</div><h3>遊ぶゲーム</h3>${choices}${modes}${buttons}<p id="err" class="error" hidden></p>`);return;
+  app.innerHTML=panel('WAITING ROOM / ゲーム待機中','みんなが集まったらスタート',top+`<div class="kicker">参加メンバー (${room.players.length}人)</div><div class="playergrid">${players()}</div><h3>遊ぶゲーム</h3>${choices}${PARTY_GAMES.includes(room.game)?`<div class="info">✨ ${esc(GAMES[room.game].desc)}<br>各自のスマホから参加できます。通話しながら遊ぶのがおすすめです。</div>`:modes}${buttons}<p id="err" class="error" hidden></p>`);return;
 }
 if(phase==='compose'){
   const mine=room.players.find(p=>p.id===me)?.topicSubmitted;
