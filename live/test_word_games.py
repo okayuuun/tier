@@ -9,7 +9,7 @@ def room(game,n=4,fmt=None):
     return {'game':game,'code':'ABCDEF','players':ps,'active':list(ps),'points':{p:0 for p in ps},
             'phase':'lobby','matchNo':1,'owner':'p0','endedEarly':False,'wordFormat':fmt}
 def test_senryu():
-    for game,fmt in [('senryu','575'),('senryu','5577'),('senryu','7775'),('tanka','57577')]:
+    for game,fmt in [('senryu','575'),('senryu','5577'),('senryu','7775')]:
         r=room(game,3,fmt);w.start(r)
         p=r['word'];judge=p['judge'];others=[x for x in r['active'] if x!=judge]
         assert p['format']==list(map(int,fmt))
@@ -26,6 +26,23 @@ def test_senryu():
         assert w.snapshot(r,judge)['room']['word']['last']['winner']==others[0]
         w.handle(r,'p0','word_next',{},True)
         assert r['phase']=='word_compose'
+def test_tanka():
+    r=room('tanka',3,'57577');w.start(r)
+    assert r['word']['judge'] is None
+    for pid in r['active']:
+        hand=r['word']['hands'][pid];used={'5':0,'7':0};lines=[]
+        for n in r['word']['format']:
+            typ=str(n);lines.append({'text':hand[typ][used[typ]]});used[typ]+=1
+        w.handle(r,pid,'word_submit',{'lines':lines},False)
+    assert r['phase']=='word_vote'
+    assert all(x['name'] is None for x in w.snapshot(r,'p0')['room']['word']['entries'])
+    for i,pid in enumerate(r['active']):
+        w.handle(r,pid,'word_vote',{'target':r['active'][(i+1)%3]},False)
+    assert r['phase']=='word_reveal'
+    assert all(score==2 for score in r['points'].values())
+    w.handle(r,'p0','word_next',{},True)
+    assert r['phase']=='word_compose'
+
 def test_titles():
     r=room('booktitle',4);w.start(r)
     for pid in r['active']:
@@ -48,5 +65,5 @@ def test_free_text():
         except ValueError:pass
         else:raise AssertionError(bad)
 if __name__=='__main__':
-    test_senryu();test_titles();test_free_text()
+    test_senryu();test_tanka();test_titles();test_free_text()
     print('Word game server smoke tests passed')
