@@ -1,0 +1,26 @@
+/* Add-on game visuals: accessible, compact and mobile friendly. */
+.extra-theme{background:linear-gradient(125deg,#fff0f9,#fff8d6);border:1px solid #efc1dc;border-radius:15px;padding:17px;margin:13px 0;display:grid;gap:7px}
+.extra-theme small{color:#955177;font-size:12px;font-weight:850}
+.extra-theme strong{font-size:clamp(18px,4vw,24px);color:#81315f;line-height:1.6}
+.extra-theme p{font-size:13px;line-height:1.75}
+.extra-progress{background:#f6dfed;color:#83325f;border-radius:10px;padding:10px;text-align:center;font-weight:900;font-size:14px}
+.extra-secret{background:white;color:#7f3066;border:1px dashed #e39bc9;border-radius:11px;padding:13px;line-height:1.85;font-size:14px}
+.extra-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:13px 0 19px}
+.extra-cell{padding:13px;background:white;border:1px solid #ebc5db;border-radius:11px;display:grid;gap:5px;min-width:0}
+.extra-cell small{font-weight:850;color:#995879;font-size:11px}
+.extra-cell b{color:#73325d;overflow-wrap:anywhere;font-size:15px}
+.extra-choice{background:#fff5fb;border:2px solid #e5a7cb;border-radius:12px;padding:12px;font:inherit;text-align:left;color:#80305e;font-size:14px;font-weight:900;cursor:pointer;min-height:53px;overflow-wrap:anywhere}
+.extra-choice:hover,.extra-choice:focus-visible{background:#ffe2f1;border-color:#cb408d}
+.extra-log{max-height:460px;overflow-y:auto;display:grid;gap:8px;margin:12px 0}
+.extra-entry{background:white;border:1px solid #eccbdc;border-radius:11px;padding:11px 13px;line-height:1.9;font-size:13px;overflow-wrap:anywhere}
+.extra-entry div{margin-top:4px}
+.extra-reply{display:inline-block;background:#e6f5e9;color:#1a7348;border-radius:8px;padding:3px 9px}
+.extra-entry .btn{font-size:11px;min-height:33px;padding:6px 8px}
+.extra-ranking{display:grid;gap:8px;margin:15px 0 21px}
+.extra-rank{background:white;border:1px solid #edd2e2;border-radius:11px;display:flex;align-items:center;gap:8px;padding:9px;min-height:51px}
+.extra-rank b{display:flex;align-items:center;justify-content:center;width:36px;height:34px;border-radius:8px;background:#ffd89d;color:#5d3252;flex-shrink:0}
+.extra-rank:nth-child(2) b{background:#ffbda2}.extra-rank:nth-child(3) b{background:#f5eba8}.extra-rank:nth-child(4) b{background:#c8edc4}.extra-rank:nth-child(5) b{background:#c7e5f0}
+.extra-rank span{flex:1;min-width:0;font-size:15px;font-weight:850;overflow-wrap:anywhere}
+.extra-rank button{background:#fff1f8;border:1px solid #e1a7c7;border-radius:8px;min-width:34px;height:33px;color:#8e3067;cursor:pointer;font-weight:900}
+.extra-rank button:disabled{opacity:.35;cursor:default}
+@media(max-width:600px){.extra-theme{padding:13px}.extra-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.extra-cell{padding:9px}.extra-cell b{font-size:12px}.extra-choice{font-size:12px;padding:9px}.extra-rank span{font-size:13px}}
