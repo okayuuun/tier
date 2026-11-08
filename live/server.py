@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
+from master_admin import MasterAdmin
 from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start as studio_start, snapshot as studio_snapshot, public_meta as studio_meta, reveal as studio_reveal
 
 ROOT = Path(__file__).parent
@@ -64,6 +65,8 @@ CONFIGS = {
     },
 }
 
+
+MASTER = MasterAdmin()
 
 def code():
     while True:
@@ -137,7 +140,9 @@ async def broadcast(room):
     room["lastUsed"] = time.time()
     for pid, p in list(room["players"].items()):
         if p["ws"] and not p["ws"].closed:
-            await send_json(p["ws"], room_snapshot(room, pid))
+            state = room_snapshot(room, pid)
+            state["room"]["publicGames"] = MASTER.public_games()
+            await send_json(p["ws"], state)
 
 
 def validate_answers(room, pid, arr):
@@ -284,8 +289,8 @@ async def handle_event(ws, context, obj):
         if not is_owner or phase != "lobby":
             raise ValueError("ルーム作成者が待機中に設定できます")
         game = obj.get("game")
-        if game not in CONFIGS:
-            raise ValueError("ゲームが不正です")
+        if game not in CONFIGS or not MASTER.published(game):
+            raise ValueError("このゲームは現在非公開です")
         room["game"] = game
         room["custom"] = None
         room["config"] = CONFIGS[game]
@@ -296,6 +301,8 @@ async def handle_event(ws, context, obj):
     elif t == "start":
         if not is_owner or phase != "lobby":
             raise ValueError("ルーム作成者だけが開始できます")
+        if not MASTER.published(room["game"]):
+            raise ValueError("このゲームは現在非公開です。別のゲームを選んでください")
         if len([p for p in room["players"].values() if p["ws"] and not p["ws"].closed]) < 2:
             raise ValueError("2人以上オンラインで参加してください")
         room["active"] = [p["id"] for p in room["players"].values() if p["ws"] and not p["ws"].closed]
@@ -468,7 +475,20 @@ async def websocket(request):
                 obj = json.loads(msg.data)
                 if not isinstance(obj, dict):
                     raise ValueError("不正な通信です")
+                old_room = ctx["room"]
+                old_phase = old_room["phase"] if old_room else None
+                old_pid = ctx["pid"]
+                old_name = old_room["players"].get(old_pid, {}).get("name", "") if old_room else ""
                 await handle_event(ws, ctx, obj)
+                after_room = ctx["room"] or old_room
+                if after_room:
+                    actor_id = ctx["pid"]
+                    name = after_room["players"].get(actor_id, {}).get("name", "") if actor_id else old_name
+                    event = str(obj.get("type", ""))[:55]
+                    detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
+                    MASTER.log_action(after_room, name, event, detail)
+                    if old_phase != "final" and after_room.get("phase") == "final":
+                        MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
     finally:
@@ -539,6 +559,13 @@ async def get_shared_challenge(request):
 
 app = web.Application()
 app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([
+    web.get("/master", lambda request: web.FileResponse(ROOT / "public" / "master.html")),
+    web.get("/master.js", lambda request: web.FileResponse(ROOT / "public" / "master.js")),
+    web.get("/master.css", lambda request: web.FileResponse(ROOT / "public" / "master.css")),
+    web.get("/master_gate.js", lambda request: web.FileResponse(ROOT / "public" / "master_gate.js")),
+])
+MASTER.register(app, ROOMS, broadcast)
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
