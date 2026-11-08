@@ -8,6 +8,14 @@ import unicodedata
 from pathlib import Path
 
 DATA = json.loads((Path(__file__).parent / 'party_data.json').read_text(encoding='utf-8'))
+# Curated original-author pages. Do not copy their problem statements or solutions.
+REFERENCE_PROBLEMS = [
+    {'title':'叩き合う男女','url':'https://www.umigame-quiz.com/problems/0a3ea349-ccd6-4383-940a-2e5c49f5a705'},
+    {'title':'突然の暴行','url':'https://www.umigame-quiz.com/problems/ba915e68-7e9b-4eac-b5fe-b36722cb8f14'},
+    {'title':'怪しい3人組','url':'https://www.umigame-quiz.com/problems/e9988d8f-2238-4b44-8a5d-a6a84c3a8915'},
+    {'title':'憂鬱な贈り物','url':'https://www.umigame-quiz.com/problems/d6fc4795-3441-45ca-84ff-7ab40c26ea5e'},
+]
+
 GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique', 'wolf'}
 EVENTS = {
     'ito_clue', 'ito_play', 'ito_next', 'ito_redraw',
@@ -15,7 +23,7 @@ EVENTS = {
     'uniq_answer', 'uniq_next', 'uniq_redraw',
     'wolf_vote', 'wolf_guess', 'wolf_next', 'wolf_force',
     'prop_submit', 'prop_show', 'prop_pick', 'prop_next',
-    'soup_custom', 'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next', 'soup_reroll', 'soup_reject'
+    'soup_reference', 'soup_custom', 'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next', 'soup_reroll', 'soup_reject'
 }
 
 
@@ -117,7 +125,7 @@ def new_proposal_round(room, first=False):
 def new_soup_round(room):
     p = room['party']
     r = p['riddles'][p['round']]
-    p.update(narrator=room['active'][p['round'] % len(room['active'])], puzzleIndex=r, entries=[], visibleHints=0, last=None, customRiddle=None)
+    p.update(narrator=room['active'][p['round'] % len(room['active'])], puzzleIndex=r, entries=[], visibleHints=0, last=None, customRiddle=None, reference=None)
     room['phase'] = 'soup_ask'
 
 
@@ -201,7 +209,7 @@ def party_snapshot(room, pid):
     elif game=='soup':
         r=p.get('customRiddle') or DATA['soup'][p['puzzleIndex']]
         out.update(round=p['round'],roundLimit=p['roundLimit'],narrator=p['narrator'],
-                   title=r['title'],situation=r['situation'],difficulty=r['difficulty'],category=r.get('category','なぞ'),bankCount=len(DATA['soup']),
+                   title=r['title'],situation=r['situation'],difficulty=r['difficulty'],category=r.get('category','なぞ'),bankCount=len(DATA['soup']),reference=p.get('reference'),
                    hints=r['hints'][:p['visibleHints']],entries=p['entries'][-85:],
                    solution=r['solution'] if phase in ('soup_reveal','final') or pid==p['narrator'] else None,
                    secretHints=r['hints'] if pid==p['narrator'] else None,
@@ -419,7 +427,20 @@ def handle_party_event(room,pid,typ,obj,is_owner):
         else:raise ValueError('操作を認識できません')
     elif room['game']=='soup':
         narrator=p['narrator']
-        if typ=='soup_custom':
+        if typ=='soup_reference':
+            if pid != narrator or phase != 'soup_ask' or p['entries'] or p['visibleHints']:
+                raise ValueError('質問が始まる前に、出題者だけが選べます')
+            idx=obj.get('refIndex')
+            if type(idx) is not int or not 0<=idx<len(REFERENCE_PROBLEMS):
+                raise ValueError('掲載元の問題を選んでください')
+            ref=REFERENCE_PROBLEMS[idx]
+            p['reference']=ref.copy()
+            p['customRiddle']={'title':ref['title'],'situation':'掲載元リンクを開き、元サイトで問題文を読んでください（ネタバレ注意）。',
+                'solution':'真相は原作者の掲載ページを確認してください。','hints':[],
+                'difficulty':4,'category':'外部の高評価問題',
+                'guide':['出題者は先に原作者のページで真相を把握してから質問を受けてください。'],'qa':[]}
+            p['entries']=[];p['visibleHints']=0
+        elif typ=='soup_custom':
             if pid != narrator or phase != 'soup_ask' or p['entries'] or p['visibleHints']:
                 raise ValueError('質問前に現在の出題者だけが変更できます')
             raw=obj.get('puzzle')
@@ -432,6 +453,7 @@ def handle_party_event(room,pid,typ,obj,is_owner):
             hints=raw.get('hints',[])
             if not isinstance(hints,list) or len(hints)>3 or any(not isinstance(h,str) or len(h)>140 for h in hints):
                 raise ValueError('ヒントは140文字以内で3つまでにしてください')
+            p['reference']=None
             p['customRiddle']={'title':title,'situation':situation,'solution':solution,
                'hints':[h.strip() for h in hints if h.strip()],'difficulty':3,'category':'自作問題',
                'guide':['独自の問題です。事前に真相と想定される質問を確認してください。'],'qa':[]}
