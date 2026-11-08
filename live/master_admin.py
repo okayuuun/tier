@@ -19,13 +19,14 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
     "propose": "たった今考えたプロポーズの言葉を君に捧ぐよ。", "soup": "ウミガメのスープ",
     "unique": "全員不一致", "wolf": "ワードウルフ",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
+    "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
 ACTION_LABELS = {
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
@@ -39,6 +40,9 @@ ACTION_LABELS = {
     "un_answer":"全員一致の回答", "un_next":"全員一致の次の問題", "un_redraw":"一致お題変更", "un_force":"一致ゲーム途中集計",
     "in_question":"質問する", "in_answer":"親の回答", "in_guess":"正解の推理", "in_vote":"内通者投票", "in_skip":"内通者投票へ進行", "in_force":"内通者投票の途中集計", "in_next":"内通者の次のラウンド",
     "sr_order":"秘密の並び提出", "sr_guess":"秘密の基準を予想", "sr_force":"秘密ランキングの答え合わせ", "sr_next":"秘密ランキングの次の主役",
+    "desc_clue":"説明を送信", "desc_guess":"説明への回答", "desc_skip":"説明の正解公開", "desc_next":"説明役を交代",
+    "draw_stroke":"お絵描きの線を提出", "draw_vote":"エセ芸術家に投票", "draw_guess":"エセ役の逆転回答", "draw_next":"次のお絵描きラウンド",
+    "mail_answer":"謎解きメールの解答", "mail_hint":"謎解きメールのヒント公開", "mail_next":"次の事件",
 }
 
 
