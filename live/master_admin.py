@@ -37,7 +37,7 @@ ACTION_LABELS = {
     "soup_reply":"質問に回答", "soup_resolve":"真相を公開",
     "unique_answer":"不一致の回答", "wolf_vote":"ワードウルフ投票",
     "un_answer":"全員一致の回答", "un_next":"全員一致の次の問題", "un_redraw":"一致お題変更", "un_force":"一致ゲーム途中集計",
-    "in_question":"質問する", "in_answer":"親の回答", "in_guess":"正解の推理", "in_vote":"内通者投票", "in_skip":"内通者投票へ進行", "in_next":"内通者の次のラウンド",
+    "in_question":"質問する", "in_answer":"親の回答", "in_guess":"正解の推理", "in_vote":"内通者投票", "in_skip":"内通者投票へ進行", "in_force":"内通者投票の途中集計", "in_next":"内通者の次のラウンド",
     "sr_order":"秘密の並び提出", "sr_guess":"秘密の基準を予想", "sr_force":"秘密ランキングの答え合わせ", "sr_next":"秘密ランキングの次の主役",
 }
 
