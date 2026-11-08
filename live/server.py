@@ -22,6 +22,7 @@ CONFIGS = {
     "propose": {"title": "ひと言プロポーズ"},
     "akaito": {"title": "アカイイト｜100になるペア"},
     "unique": {"title": "全員不一致チャレンジ"},
+    "wolf": {"title": "ワードウルフ｜少数派を探せ"},
     "soup": {"title": "ひらめきのスープ"},
     "tier": {
         "title": "休日にいちばんやりたいこと",
