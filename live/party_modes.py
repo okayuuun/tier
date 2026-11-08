@@ -8,11 +8,12 @@ import unicodedata
 from pathlib import Path
 
 DATA = json.loads((Path(__file__).parent / 'party_data.json').read_text(encoding='utf-8'))
-GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique'}
+GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique', 'wolf'}
 EVENTS = {
     'ito_clue', 'ito_play', 'ito_next', 'ito_redraw',
     'red_clue', 'red_redraw', 'red_offer', 'red_accept', 'red_reject', 'red_next',
     'uniq_answer', 'uniq_next', 'uniq_redraw',
+    'wolf_vote', 'wolf_guess', 'wolf_next', 'wolf_force',
     'prop_submit', 'prop_show', 'prop_pick', 'prop_next',
     'soup_custom', 'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next', 'soup_reroll', 'soup_reject'
 }
@@ -53,6 +54,38 @@ def new_unique_round(room):
     p['used'].append(p['theme'])
     p['answers']={}
     room['phase']='uniq_answer'
+
+
+
+def new_wolf_round(room):
+    p=room['party']; active=room['active']
+    candidates=[i for i in range(len(DATA['wolfPairs'])) if i not in p['used']]
+    if not candidates:
+        p['used']=[];candidates=list(range(len(DATA['wolfPairs'])))
+    pair_index=secrets.choice(candidates);p['used'].append(pair_index)
+    pair=DATA['wolfPairs'][pair_index][:]
+    secrets.SystemRandom().shuffle(pair)
+    p.update(pair=pair,wolf=secrets.choice(active),votes={},last=None,wordGuess=None)
+    room['phase']='wolf_talk'
+
+
+def finish_wolf(room, guess=None):
+    p=room['party'];wolf=p['wolf'];votes=p['votes']
+    counts={pid:0 for pid in room['active']}
+    for target in votes.values():counts[target]+=1
+    caught=bool(votes) and counts[wolf]>0 and counts[wolf]==max(counts.values()) and sum(counts[x]==counts[wolf] for x in counts)==1
+    guessed=bool(guess) and unique_key(guess)==unique_key(p['pair'][0])
+    if caught:
+        for pid,target in votes.items():
+            if target==wolf:room['points'][pid]+=2
+        if guessed:room['points'][wolf]+=3
+    else:
+        room['points'][wolf]+=3
+    result={'round':p['round']+1,'majority':p['pair'][0],'minority':p['pair'][1],
+       'wolfId':wolf,'wolfName':room['players'][wolf]['name'],'caught':caught,'wolfGuessed':guessed,
+       'votes':[{'pid':pid,'name':room['players'][pid]['name'],'target':target} for pid,target in votes.items()],
+       'points':[{'pid':pid,'name':room['players'][pid]['name'],'score':room['points'][pid]} for pid in room['active']]}
+    p['last']=result;p['history'].append(result);room['phase']='wolf_reveal'
 
 
 def conclude_red(room):
@@ -102,6 +135,10 @@ def start_party(room):
         if len(active)>10: raise ValueError('赤いitoモードは2〜10人です')
         room['party']={'round':0,'roundLimit':4,'theme':None,'history':[]}
         new_red_round(room)
+    elif game == 'wolf':
+        if len(active)<3:raise ValueError('ワードウルフは3人以上で遊べます')
+        room['party']={'round':0,'roundLimit':5,'used':[],'history':[]}
+        new_wolf_round(room)
     elif game == 'unique':
         room['party']={'round':0,'roundLimit':10,'streak':0,'targetStreak':5,'history':[],'used':[]}
         new_unique_round(room)
@@ -141,6 +178,11 @@ def party_snapshot(room, pid):
                    remaining=p['remaining'],pending=p['pending'],pairs=p['pairs'],
                    last=p['last'] if phase in ('red_reveal','final') else None,
                    history=p['history'] if phase=='final' else [])
+    elif game=='wolf':
+        out.update(round=p['round'],roundLimit=p['roundLimit'],myWord=p['pair'][1] if pid==p['wolf'] else p['pair'][0],
+          canGuess=(pid==p['wolf'] and phase=='wolf_guess'),myVote=p['votes'].get(pid),votedCount=len(p['votes']),
+          last=p['last'] if phase in ('wolf_reveal','final') else None,
+          history=p['history'] if phase=='final' else [])
     elif game=='unique':
         out.update(round=p['round'],roundLimit=p['roundLimit'],streak=p['streak'],targetStreak=p['targetStreak'],
                    theme=p['theme'],submitted=pid in p['answers'],submittedCount=len(p['answers']),
@@ -257,6 +299,35 @@ def handle_party_event(room,pid,typ,obj,is_owner):
             else:
                 p['round']+=1
                 new_red_round(room)
+        else:raise ValueError('操作を認識できません')
+    elif room['game']=='wolf':
+        if typ=='wolf_vote':
+            target=obj.get('target')
+            if phase!='wolf_talk' or pid in p['votes'] or target not in active or target==pid:
+                raise ValueError('自分以外の人を1人選んで投票してください')
+            p['votes'][pid]=target
+            if len(p['votes'])==len(active):
+                counts={x:list(p['votes'].values()).count(x) for x in active}
+                if counts[p['wolf']]>0 and counts[p['wolf']]==max(counts.values()) and list(counts.values()).count(counts[p['wolf']])==1:
+                    room['phase']='wolf_guess'
+                else:finish_wolf(room)
+        elif typ=='wolf_guess':
+            if phase!='wolf_guess' or pid!=p['wolf']:raise ValueError('少数派だけが回答できます')
+            guess=str(obj.get('text','')).strip()[:60]
+            if not guess:raise ValueError('多数派のお題を入力してください')
+            finish_wolf(room,guess)
+        elif typ=='wolf_force':
+            if not is_owner or phase!='wolf_talk' or len(p['votes'])<2:
+                raise ValueError('主催者が2人以上の投票後に進められます')
+            counts={x:list(p['votes'].values()).count(x) for x in active}
+            if counts[p['wolf']]>0 and counts[p['wolf']]==max(counts.values()) and list(counts.values()).count(counts[p['wolf']])==1:
+                room['phase']='wolf_guess'
+            else:finish_wolf(room)
+        elif typ=='wolf_next':
+            if not is_owner or phase!='wolf_reveal':raise ValueError('主催者だけが次へ進めます')
+            if p['round']+1>=p['roundLimit']:room['phase']='final'
+            else:
+                p['round']+=1;new_wolf_round(room)
         else:raise ValueError('操作を認識できません')
     elif room['game']=='unique':
         if typ=='uniq_redraw':
