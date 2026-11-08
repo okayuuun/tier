@@ -23,7 +23,7 @@ def validate_deck(game, obj):
 
 def new_round(room):
     p=room['word'];active=room['active'];bank=room.get('wordDeck') or DATA
-    p['judge']=active[p['round']%len(active)] if room['game']!='booktitle' else None
+    p['judge']=active[p['round']%len(active)] if room['game']=='senryu' else None
     p.update(submitted={},votes={},last=None,hands={})
     if room['game']=='booktitle':
         for pid in active:p['hands'][pid]={'top':sample(bank['bookTop'],7),'bottom':sample(bank['bookBottom'],7)}
