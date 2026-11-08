@@ -25,7 +25,7 @@ LABELS = {
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
     "propose": "たった今考えたプロポーズの言葉を君に捧ぐよ。", "soup": "ウミガメのスープ",
     "unique": "全員不一致", "wolf": "ワードウルフ",
-    "senryu": "昼ドラ川柳", "tanka": "57577（自由短歌）", "booktitle": "横暴編集長（タイトル遊び）",
+    "senryu": "昼ドラ川柳", "tanka": "５７５７７（ゴーシチゴーシチシチ）", "booktitle": "横暴編集長",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
