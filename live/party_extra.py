@@ -4,7 +4,7 @@ import unicodedata
 from party_extra_data import UNANIMOUS_THEMES, INSIDER_WORDS, RANK_SETS
 
 EXTRA_IDS={'unanimous','insider','secret_rank'}
-EXTRA_EVENTS={'un_answer','un_next','un_redraw','un_force','in_question','in_answer','in_guess','in_vote','in_skip','in_next','sr_order','sr_guess','sr_force','sr_next'}
+EXTRA_EVENTS={'un_answer','un_next','un_redraw','un_force','in_question','in_answer','in_guess','in_vote','in_skip','in_force','in_next','sr_order','sr_guess','sr_force','sr_next'}
 
 def norm(v):
     return ''.join(unicodedata.normalize('NFKC',str(v)).casefold().split())
@@ -166,6 +166,9 @@ def handle_extra(room,pid,event,obj,is_owner):
                 raise ValueError('親と自分以外へ投票してください')
             p['votes'][pid]=target
             if len(p['votes'])==len(a)-1:reveal_in(room)
+        elif event=='in_force':
+            if not is_owner or phase!='in_vote' or not p['votes']:raise ValueError('主催者は1票以上で締め切れます')
+            reveal_in(room)
         elif event=='in_next':
             if phase!='in_reveal' or not is_owner:raise ValueError('主催者だけが進めます')
             if p['round']+1>=p['roundLimit']:room['phase']='final'
