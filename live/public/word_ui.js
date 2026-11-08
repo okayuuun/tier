@@ -7,8 +7,28 @@ function wordLobbyPanel(){
  if(!WORD_GAMES.includes(room?.game))return '';
  if(room.game==='booktitle')return '<div class="w-note">📚 タイトルの前半・後半を組み合わせ、全員で投票して採用作品を選びます。自由入力もできます。</div>';
  const f=room.wordFormat||(room.game==='tanka'?'57577':'575'),owner=room.owner===me;
- return `<section class="w-panel"><h3>句の形式を選ぼう</h3><div class="w-formats">${[['575','5・7・5'],['57577','5・7・5・7・7'],['5577','5・5・7・7'],['7775','7・7・7・5']].map(([n,l])=>`<button class="w-format ${n===f?'selected':''}" ${owner?'':'disabled'} onclick="wordSetFormat('${n}')">${l}</button>`).join('')}</div><div class="w-inline"><label for="w-custom">自由形式</label><input class="field" id="w-custom" maxlength="6" inputmode="numeric" value="${esc(f)}" placeholder="5577" ${owner?'':'disabled'}><button class="btn alt" ${owner?'':'disabled'} onclick="wordCustom()">設定</button></div><p class="small">現在：<b>${f.split('').join('・')}</b>（音数は厳密に強制しません）</p></section>`;
+ return `<section class="w-panel"><h3>句の形式を選ぼう</h3><div class="w-formats">${[['575','5・7・5'],['57577','5・7・5・7・7'],['5577','5・5・7・7'],['7775','7・7・7・5']].map(([n,l])=>`<button class="w-format ${n===f?'selected':''}" ${owner?'':'disabled'} onclick="wordSetFormat('${n}')">${l}</button>`).join('')}</div><div class="w-inline"><label for="w-custom">自由形式</label><input class="field" id="w-custom" maxlength="6" inputmode="numeric" value="${esc(f)}" placeholder="5577" ${owner?'':'disabled'}><button class="btn alt" ${owner?'':'disabled'} onclick="wordCustom()">設定</button></div><p class="small">現在：<b>${f.split('').join('・')}</b>（音数は厳密に強制しません）</p></section>${wordDeckEditor()}`;
 }
+
+function wordDeckEditor(){
+ const book=room.game==='booktitle',types=book?['bookTop','bookBottom']:['five','seven'],labels=book?['タイトル前半','タイトル後半']:['5音の言葉','7音の言葉'];
+ let saved={};try{saved=JSON.parse(localStorage.getItem('nk_word_bank_'+room.game)||'{}')}catch(_){}
+ const host=room.owner===me;
+ return `<details class="w-panel"><summary style="cursor:pointer;font-weight:900;color:#9d3171">🗃️ マイカードを登録して遊ぶ ${room.wordDeckLoaded?'（登録済み）':''}</summary><p class="small">元のカードで遊ぶ場合は、手元の言葉を改行区切りで入力。2〜200語／種類。自分のブラウザに保存されます。</p>${types.map((t,i)=>`<label class="labeled" for="w-deck-${t}">${labels[i]}</label><textarea id="w-deck-${t}" class="field" rows="5" placeholder="1行に1つずつ">${esc((saved[t]||[]).join('\n'))}</textarea>`).join('')}<div class="btns">${host?'<button class="btn gold" onclick="wordDeckImport()">この言葉で遊ぶ</button>':'<p class="small">ホストだけがカードを登録できます。</p>'}</div></details>`;
+}
+function wordDeckImport(){
+ if(room.owner!==me)return;
+ const fields=room.game==='booktitle'?['bookTop','bookBottom']:['five','seven'],deck={};
+ for(const key of fields){
+  const text=document.getElementById('w-deck-'+key)?.value||'';
+  const list=[...new Set(text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean))];
+  if(list.length<2||list.length>200||list.some(x=>x.length>35))return alert('各種類に2〜200語、1語35文字以内で登録してください');
+  deck[key]=list;
+ }
+ try{localStorage.setItem('nk_word_bank_'+room.game,JSON.stringify(deck))}catch(_){}
+ send({type:'word_deck',deck});
+}
+
 function wordSetFormat(f){send({type:'word_format',format:f})}
 function wordCustom(){const f=(document.getElementById('w-custom')?.value||'').trim();if(!/^[57]{2,6}$/.test(f))return alert('5と7を2〜6個並べてください');wordSetFormat(f)}
 function wState(){const p=room.word,k=[room.code,room.matchNo,p.round,room.game].join(':');if(wordDraft.key!==k)wordDraft={key:k,lines:p.format.map(()=>null),selected:0,top:null,bottom:null};return wordDraft}
