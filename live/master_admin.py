@@ -19,12 +19,13 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
     "propose": "たった今考えたプロポーズの言葉を君に捧ぐよ。", "soup": "ウミガメのスープ",
     "unique": "全員不一致", "wolf": "ワードウルフ",
+    "senryu": "昼ドラ川柳", "tanka": "57577（自由短歌）", "booktitle": "横暴編集長（タイトル遊び）",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
@@ -37,6 +38,8 @@ ACTION_LABELS = {
     "prop_pick":"プロポーズ審査", "soup_ask":"質問", "soup_solve":"真相を推理",
     "soup_reply":"質問に回答", "soup_resolve":"真相を公開",
     "unique_answer":"不一致の回答", "wolf_vote":"ワードウルフ投票",
+    "word_format":"句の型を設定", "word_submit":"句・タイトルを提出", "word_show":"句を発表",
+    "word_pick":"親が作品を採用", "word_vote":"編集会議で投票", "word_force":"途中集計", "word_next":"次のラウンド",
     "un_answer":"全員一致の回答", "un_next":"全員一致の次の問題", "un_redraw":"一致お題変更", "un_force":"一致ゲーム途中集計",
     "in_question":"質問する", "in_answer":"親の回答", "in_guess":"正解の推理", "in_vote":"内通者投票", "in_skip":"内通者投票へ進行", "in_force":"内通者投票の途中集計", "in_next":"内通者の次のラウンド",
     "sr_order":"秘密の並び提出", "sr_guess":"秘密の基準を予想", "sr_force":"秘密ランキングの答え合わせ", "sr_next":"秘密ランキングの次の主役",
@@ -131,6 +134,9 @@ class MasterAdmin:
             p = room["party"]
             details = {"type": "party", "rounds": p.get("history", p.get("rounds", [])),
                        "round": p.get("round"), "rings": p.get("rings"), "lives": p.get("lives")}
+        elif room.get("word"):
+            w=room["word"]
+            details={"type":"word","format":w.get("format"),"round":w.get("round"),"rounds":w.get("history",[])}
         elif room.get("more"):
             p = room["more"]
             details = {"type": "party", "rounds": p.get("history", []),
