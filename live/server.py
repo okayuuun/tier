@@ -25,6 +25,9 @@ CONFIGS = {
     "akaito": {"title": "アカイイト｜100になるペア"},
     "unique": {"title": "全員不一致チャレンジ"},
     "wolf": {"title": "ワードウルフ｜少数派を探せ"},
+    "unanimous": {"title": "全員一致ゲーム"},
+    "insider": {"title": "インサイダーゲーム"},
+    "secret_rank": {"title": "シークレットランキング"},
     "soup": {"title": "ひらめきのスープ"},
     "tier": {
         "title": "休日にいちばんやりたいこと",
@@ -562,7 +565,7 @@ async def get_shared_challenge(request):
     return web.json_response({"data": item["data"]}, headers={"Cache-Control": "no-store"})
 
 app = web.Application()
-app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.add_routes([
     web.get("/master", lambda request: web.FileResponse(ROOT / "public" / "master.html")),
     web.get("/master.js", lambda request: web.FileResponse(ROOT / "public" / "master.js")),
