@@ -6,6 +6,7 @@ import json
 import secrets
 import unicodedata
 from pathlib import Path
+from party_extra import EXTRA_IDS, EXTRA_EVENTS, start_extra, extra_snapshot, handle_extra
 
 DATA = json.loads((Path(__file__).parent / 'party_data.json').read_text(encoding='utf-8'))
 # Curated original-author pages. Do not copy their problem statements or solutions.
@@ -21,7 +22,7 @@ REFERENCE_PROBLEMS = [
     {'title':'反則した男','url':'https://www.umigame-quiz.com/problems/930cb3ef-1869-4943-9792-ae52c2e46c85'},
 ]
 
-GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique', 'wolf'}
+GAME_IDS = {'ito', 'akaito', 'propose', 'soup', 'unique', 'wolf'} | EXTRA_IDS
 EVENTS = {
     'ito_clue', 'ito_play', 'ito_next', 'ito_redraw',
     'red_clue', 'red_redraw', 'red_offer', 'red_accept', 'red_reject', 'red_next',
@@ -31,6 +32,7 @@ EVENTS = {
     'soup_reference', 'soup_custom', 'soup_ask', 'soup_solve', 'soup_reply', 'soup_hint', 'soup_resolve', 'soup_next', 'soup_reroll', 'soup_reject'
 }
 
+EVENTS.update(EXTRA_EVENTS)
 
 def random_topic(previous=None):
     pool = [x for x in DATA['itoThemes'] if x != previous]
@@ -135,6 +137,8 @@ def new_soup_round(room):
 
 
 def start_party(room):
+    if room['game'] in EXTRA_IDS:
+        return start_extra(room)
     game = room['game']
     active = room['active']
     if len(active) < 2:
@@ -168,6 +172,8 @@ def start_party(room):
 
 
 def party_snapshot(room, pid):
+    if room['game'] in EXTRA_IDS:
+        return extra_snapshot(room, pid)
     game, p, phase = room['game'], room['party'], room['phase']
     players = [
         {'id':x['id'],'name':x['name'],'online':bool(x['ws'] and not x['ws'].closed),'score':room['points'].get(x['id'],0), 'avatar':x.get('avatar',''), 'emoji':x.get('emoji','🌷')}
@@ -226,6 +232,8 @@ def party_snapshot(room, pid):
 
 
 def handle_party_event(room,pid,typ,obj,is_owner):
+    if room['game'] in EXTRA_IDS:
+        return handle_extra(room,pid,typ,obj,is_owner)
     p, phase = room['party'], room['phase']
     active = room['active']
     if pid not in active:
