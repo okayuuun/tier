@@ -9,6 +9,7 @@ import secrets
 import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
+from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
@@ -21,6 +22,9 @@ MAX_PLAYERS = 12
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
+    "senryu": {"title": "昼ドラ川柳"},
+    "tanka": {"title": "57577（自由短歌）"},
+    "booktitle": {"title": "横暴編集長（タイトル遊び）"},
     "ito": {"title": "ことばの数値リレー"},
     "propose": {"title": "ひと言プロポーズ"},
     "akaito": {"title": "アカイイト｜100になるペア"},
@@ -103,6 +107,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in WORD_IDS and room['phase'] != 'lobby':
+        return word_snapshot(room, pid)
     if room['game'] in MORE_IDS and room['phase'] != 'lobby':
         return more_snapshot(room, pid)
     if room['game'] in PARTY_IDS and room['phase'] != 'lobby':
@@ -151,6 +157,7 @@ async def broadcast(room):
         if p["ws"] and not p["ws"].closed:
             state = room_snapshot(room, pid)
             state["room"]["publicGames"] = MASTER.public_games()
+            state["room"]["wordFormat"] = room.get("wordFormat")
             await send_json(p["ws"], state)
 
 
@@ -284,6 +291,20 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
+    if t == "word_format":
+        if not is_owner or room["phase"] != "lobby" or room["game"] not in ("senryu","tanka"):
+            raise ValueError("句の型は待機中に主催者だけが変更できます")
+        fmt = obj.get("format")
+        parse_word_format(fmt)
+        room["wordFormat"] = fmt
+        await broadcast(room)
+        return
+    if t in WORD_EVENTS:
+        if room["game"] not in WORD_IDS or room["phase"] == "lobby":
+            raise ValueError("このゲームではまだその操作は使えません")
+        word_handle(room, pid, t, obj, is_owner)
+        await broadcast(room)
+        return
     if t in STUDIO_EVENTS:
         studio_handle(room, pid, t, obj, is_owner)
         await broadcast(room)
@@ -307,6 +328,7 @@ async def handle_event(ws, context, obj):
         if game not in CONFIGS or not MASTER.published(game):
             raise ValueError("このゲームは現在非公開です")
         room["game"] = game
+        room["wordFormat"] = "57577" if game=="tanka" else "575" if game=="senryu" else None
         room["custom"] = None
         room["config"] = CONFIGS[game]
         mode = obj.get("tierMode", room["tierMode"])
@@ -333,6 +355,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in WORD_IDS:
+            word_start(room)
         elif room['game'] in MORE_IDS:
             more_start(room)
         elif room['game'] in PARTY_IDS:
@@ -431,6 +455,7 @@ async def handle_event(ws, context, obj):
             raise ValueError("ルーム作成者だけがもう一度始められます")
         room["phase"] = "lobby"
         room.pop('party', None)
+        room.pop('word', None)
         room["active"] = []
         room["playerConfigs"] = {}
         room["topics"] = {}
@@ -504,7 +529,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
@@ -580,6 +605,9 @@ async def get_shared_challenge(request):
 
 app = web.Application()
 app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")),
+    web.get("/word_ui.js", lambda request: web.FileResponse(ROOT / "public" / "word_ui.js")),
+    web.get("/word_ui.css", lambda request: web.FileResponse(ROOT / "public" / "word_ui.css")),
+    web.get("/word_rules.js", lambda request: web.FileResponse(ROOT / "public" / "word_rules.js")),
     web.get("/more_ui.js", lambda request: web.FileResponse(ROOT / "public" / "more_ui.js")),
     web.get("/more_ui.css", lambda request: web.FileResponse(ROOT / "public" / "more_ui.css")),
     web.get("/more_rules.js", lambda request: web.FileResponse(ROOT / "public" / "more_rules.js")),
