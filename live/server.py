@@ -20,6 +20,8 @@ QUESTION_COUNT = 5
 CONFIGS = {
     "ito": {"title": "ことばの数値リレー"},
     "propose": {"title": "ひと言プロポーズ"},
+    "akaito": {"title": "アカイイト｜100になるペア"},
+    "unique": {"title": "全員不一致チャレンジ"},
     "soup": {"title": "ひらめきのスープ"},
     "tier": {
         "title": "休日にいちばんやりたいこと",
@@ -72,7 +74,7 @@ def public_player(p, room):
     pid = p["id"]
     return {"id": pid, "name": p["name"], "online": bool(p["ws"] and not p["ws"].closed),
             "answered": pid in room["answers"], "guessed": pid in room["guesses"],
-            "topicSubmitted": pid in room["topics"],
+            "topicSubmitted": pid in room["topics"], "avatar": p.get("avatar", ""), "emoji": p.get("emoji", "🌷"),
             "score": room["points"].get(pid, 0)}
 
 
@@ -227,7 +229,12 @@ async def handle_event(ws, context, obj):
             if not room:
                 raise ValueError("そのルームは見つかりません。サーバー再起動で消えた可能性もあります")
         returning = next((p for p in room["players"].values() if p["sid"] == sid), None)
+        avatar = str(obj.get("avatar", ""))[:30032]
+        avatar = avatar if re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/=]{1,30000}", avatar) else ""
+        emoji = str(obj.get("emoji", "🌷"))[:5]
         if returning:
+            returning["avatar"] = avatar or returning.get("avatar", "")
+            returning["emoji"] = emoji
             if returning["ws"] and not returning["ws"].closed and returning["ws"] is not ws:
                 await returning["ws"].close(code=1000, message=b"replaced by reconnection")
             returning["ws"] = ws
@@ -239,7 +246,7 @@ async def handle_event(ws, context, obj):
             if len(room["players"]) >= MAX_PLAYERS:
                 raise ValueError("このルームは満員です")
             pid = secrets.token_urlsafe(10)
-            room["players"][pid] = {"id": pid, "sid": sid, "name": name, "ws": ws}
+            room["players"][pid] = {"id": pid, "sid": sid, "name": name, "ws": ws, "avatar": avatar, "emoji": emoji}
             room["points"][pid] = 0
             if not room["owner"]:
                 room["owner"] = pid
@@ -472,7 +479,7 @@ async def task_ctx(app):
 
 
 app = web.Application()
-app.add_routes([web.get("/", index), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
