@@ -9,7 +9,7 @@ import secrets
 import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
-from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format
+from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format, validate_deck as validate_word_deck
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
@@ -158,6 +158,7 @@ async def broadcast(room):
             state = room_snapshot(room, pid)
             state["room"]["publicGames"] = MASTER.public_games()
             state["room"]["wordFormat"] = room.get("wordFormat")
+            state["room"]["wordDeckLoaded"] = bool(room.get("wordDeck"))
             await send_json(p["ws"], state)
 
 
@@ -291,6 +292,12 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
+    if t == "word_deck":
+        if not is_owner or room["phase"] != "lobby" or room["game"] not in WORD_IDS:
+            raise ValueError("カードの登録は待機中に主催者だけができます")
+        room["wordDeck"] = validate_word_deck(room["game"], obj.get("deck"))
+        await broadcast(room)
+        return
     if t == "word_format":
         if not is_owner or room["phase"] != "lobby" or room["game"] not in ("senryu","tanka"):
             raise ValueError("句の型は待機中に主催者だけが変更できます")
@@ -327,6 +334,8 @@ async def handle_event(ws, context, obj):
         game = obj.get("game")
         if game not in CONFIGS or not MASTER.published(game):
             raise ValueError("このゲームは現在非公開です")
+        if room["game"] != game:
+            room.pop("wordDeck", None)
         room["game"] = game
         room["wordFormat"] = "57577" if game=="tanka" else "575" if game=="senryu" else None
         room["custom"] = None
