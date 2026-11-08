@@ -5,7 +5,7 @@ let wordDraft={key:'',lines:[],selected:0,top:null,bottom:null};
 const wButton=(s,fn,k='')=>action(s,fn,k);
 function wordLobbyPanel(){
  if(!WORD_GAMES.includes(room?.game))return '';
- if(room.game==='booktitle')return '<div class="w-note">📚 タイトルの前半・後半を組み合わせ、全員で投票して採用作品を選びます。自由入力もできます。</div>';
+ if(room.game==='booktitle')return '<div class="w-note">📚 タイトルの前半・後半を組み合わせ、全員で投票して採用作品を選びます。自由入力もできます。</div>' + wordDeckEditor();
  const f=room.wordFormat||(room.game==='tanka'?'57577':'575'),owner=room.owner===me;
  return `<section class="w-panel"><h3>句の形式を選ぼう</h3><div class="w-formats">${[['575','5・7・5'],['57577','5・7・5・7・7'],['5577','5・5・7・7'],['7775','7・7・7・5']].map(([n,l])=>`<button class="w-format ${n===f?'selected':''}" ${owner?'':'disabled'} onclick="wordSetFormat('${n}')">${l}</button>`).join('')}</div><div class="w-inline"><label for="w-custom">自由形式</label><input class="field" id="w-custom" maxlength="6" inputmode="numeric" value="${esc(f)}" placeholder="5577" ${owner?'':'disabled'}><button class="btn alt" ${owner?'':'disabled'} onclick="wordCustom()">設定</button></div><p class="small">現在：<b>${f.split('').join('・')}</b>（音数は厳密に強制しません）</p></section>${wordDeckEditor()}`;
 }
