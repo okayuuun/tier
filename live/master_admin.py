@@ -123,6 +123,7 @@ class MasterAdmin:
             p = room["party"]
             details = {"type": "party", "rounds": p.get("history", p.get("rounds", [])),
                        "round": p.get("round"), "rings": p.get("rings"), "lives": p.get("lives")}
+        details["status"] = room.get("phase", "")
         summary = json.dumps(clean_history(details), ensure_ascii=False)[:40000]
         self.db.execute("INSERT OR REPLACE INTO history(stamp,ts,room,game,players,results,ended_early) VALUES (?,?,?,?,?,?,?)",
                         (stamp, time.time(), room.get("code", ""), room.get("game", ""),
@@ -278,6 +279,8 @@ class MasterAdmin:
         room = (self.rooms or {}).get(code)
         if not room:
             raise web.HTTPNotFound(text="ルームが見つかりません")
+        room["endedEarly"] = True
+        self.save_match(room)
         for p in list(room["players"].values()):
             ws = p.get("ws")
             if ws and not ws.closed:
