@@ -21,14 +21,20 @@ jobs:
           for f in live/public/*.js; do node --check "$f"; done
       - name: Test all three new game flows
         run: python live/test_extra_modes.py
+      - name: Test the newest party game modes
+        run: python live/test_more_modes.py
       - name: Import game modules
         run: |
           cd live
           python - <<'PY'
           from party_modes import GAME_IDS, EVENTS
           from master_admin import GAMES
+          from party_more import GAME_IDS as NEW_GAME_IDS, EVENTS as NEW_EVENTS
           assert {'unanimous','insider','secret_rank'} <= GAME_IDS
           assert {'unanimous','insider','secret_rank'} <= set(GAMES)
           assert {'un_answer','in_question','sr_order'} <= EVENTS
-          print('All three new games are registered')
+          assert {'describe','drawfake','mysterymail'} <= NEW_GAME_IDS
+          assert {'describe','drawfake','mysterymail'} <= set(GAMES)
+          assert {'desc_clue','draw_stroke','mail_answer'} <= NEW_EVENTS
+          print('All six recent games are registered')
           PY
