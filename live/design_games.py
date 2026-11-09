@@ -37,6 +37,8 @@ CHAR_TRAITS = ["片目を隠している","丸いシルエット","左右非対�
  "小物を三つ持つ","背中に秘密がある","武器は禁止","水色がテーマカラー",
  "植物の模様がある","季節感がある","足元が個性的"]
 RNG = secrets.SystemRandom()
+AXES = ('cute','fun','original')
+AXIS_LABELS = {'cute':'かわいさ','fun':'面白さ','original':'独創性'}
 
 def _text(v,label,minimum=1,maximum=100):
     if not isinstance(v,str) or not minimum <= len(v.strip()) <= maximum:
@@ -67,20 +69,30 @@ def _shuffle(p):
     p["order"]=list(p["submissions"]);RNG.shuffle(p["order"])
 
 def _complete_invent(r):
-    p=r["design"];counts=Counter(p["votes"].values())
-    for pid,count in counts.items():r["points"][pid]+=2*count
-    rows=[dict(id=pid,name=_name(r,pid),votes=counts.get(pid,0),**s)
-          for pid,s in p["submissions"].items()]
-    high=max(counts.values(),default=0)
+    p=r["design"]
+    counts={axis:Counter(v[axis] for v in p["votes"].values()) for axis in AXES}
+    total=Counter()
+    for axis in AXES:
+        for pid,n in counts[axis].items():
+            r["points"][pid]+=n
+            total[pid]+=n
+    rows=[dict(id=pid,name=_name(r,pid),votes=total.get(pid,0),
+               ratings={axis:counts[axis].get(pid,0) for axis in AXES},**item)
+          for pid,item in p["submissions"].items()]
+    high=max(total.values(),default=0)
     p["last"]={"round":p["round"]+1,"brief":dict(p["brief"]),"entries":rows,
-               "winners":[x["id"] for x in rows if high and x["votes"]==high]}
+               "axes":AXIS_LABELS.copy(),"winners":[x["id"] for x in rows if high and x["votes"]==high]}
     p["history"].append(p["last"]);r["phase"]="inv_reveal"
 
-def _complete_char(r,winner):
+def _complete_char(r,winner,ratings=None):
     p=r["design"];r["points"][winner]+=3
+    ratings=ratings or {}
+    for axis in AXES:
+        selected=ratings.get(axis)
+        if selected in p["submissions"]:r["points"][selected]+=1
     p["last"]={"round":p["round"]+1,"brief":dict(p["brief"]),"clientName":_name(r,p["judge"]),
                "winner":winner,"winnerName":_name(r,winner),
-               "entries":[dict(id=k,name=_name(r,k),**v) for k,v in p["submissions"].items()]}
+               "entries":[dict(id=k,name=_name(r,k),ratings={axis:int(ratings.get(axis)==k) for axis in AXES},**v) for k,v in p["submissions"].items()], "axes":AXIS_LABELS.copy()}
     p["history"].append(p["last"]);r["phase"]="char_reveal"
 
 def snapshot(r,pid):
@@ -126,7 +138,10 @@ def handle(r,pid,t,obj,host):
             if phase!="inv_vote" or pid in p["votes"]:raise ValueError("今は投票できません")
             target=obj.get("target")
             if target not in p["submissions"] or target==pid:raise ValueError("自分の作品には投票できません")
-            p["votes"][pid]=target
+            ratings=obj.get("ratings")
+            if not isinstance(ratings,dict) or set(ratings)!=set(AXES) or any(x not in p["submissions"] or x==pid for x in ratings.values()):
+                raise ValueError("かわいさ・面白さ・独創性のすべてを、自分以外の作品から選んでください")
+            p["votes"][pid]={axis:ratings[axis] for axis in AXES}
             if len(p["votes"])==len(a):_complete_invent(r)
         elif t=="inv_force":
             if not host:raise ValueError("主催者だけが進行できます")
@@ -156,7 +171,10 @@ def handle(r,pid,t,obj,host):
         elif t=="char_pick":
             if phase!="char_pick" or not client:raise ValueError("依頼人だけが採用できます")
             if obj.get("target") not in p["submissions"]:raise ValueError("作品がありません")
-            _complete_char(r,obj["target"])
+            ratings=obj.get("ratings")
+            if not isinstance(ratings,dict) or set(ratings)!=set(AXES) or any(x not in p["submissions"] for x in ratings.values()):
+                raise ValueError("3つの評価軸を選んでください")
+            _complete_char(r,obj["target"],ratings)
         elif t=="char_force":
             if not host or phase!="char_create" or not p["submissions"]:raise ValueError("主催者が進行できます")
             _shuffle(p);r["phase"]="char_pick"
