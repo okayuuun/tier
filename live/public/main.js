@@ -21,6 +21,7 @@ Object.assign(GAMES,{
 });
 Object.assign(GAMES,{artcontest:{title:'お絵描き作品コンテスト',icon:'🖼️',desc:'同じお題を描いて全員で作品に投票する'},artforbid:{title:'NGお絵描き',icon:'🚫',desc:'禁止された特徴を描かずにお題を表現する'},drawbluff:{title:'絵のタイトル当て',icon:'🧩',desc:'絵に偽タイトルを混ぜて元のお題を推理する'}});
 Object.assign(GAMES,{artmix:{title:'イラスト×セリフ大合体',icon:'🖼️',desc:'別々の人が作った絵とセリフをランダムに合体'},artcollab:{title:'合作お絵描き',icon:'🤝',desc:'みんなで1枚の絵を順番に描き足す'},reverseart:{title:'逆お絵描きクイズ',icon:'🧐',desc:'正解を知らずヒントだけで描いて自分の絵を推理'}});
+Object.assign(GAMES,{invent:{title:'発明プレゼン大会',icon:'💡',desc:'架空の商品を描いてプレゼンし、欲しい作品へ投票する'},chardesign:{title:'キャラクターデザイン依頼',icon:'🧑‍🎨',desc:'依頼人の指定した条件でキャラクターをデザインする'}});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
@@ -67,6 +68,7 @@ function render(){
 if(!room)return landing();
 let phase=room.phase,owner=room.owner===me,top=roomBar();
 if(room.customMeta&&phase!=='lobby'){renderStudioLive();return}
+if(DESIGN_GAMES.includes(room.game)&&phase!=='lobby'){renderDesignGames();return}
 if(DRAW_MIX_GAMES.includes(room.game)&&phase!=='lobby'){renderDrawMix();return}
 if(ART_EXTRA_GAMES.includes(room.game)&&phase!=='lobby'){renderArtExtra();return}
 if(DRAW_GAMES.includes(room.game)&&phase!=='lobby'){renderDraw();return}
