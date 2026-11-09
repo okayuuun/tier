@@ -714,6 +714,7 @@ app.add_routes([
     web.get("/milli", lambda request: web.FileResponse(ROOT / "public" / "milli.html")),
     web.get("/milli.css", lambda request: web.FileResponse(ROOT / "public" / "milli.css")),
     web.get("/milli.js", lambda request: web.FileResponse(ROOT / "public" / "milli.js")),
+    web.get("/game_filters.js", lambda request: web.FileResponse(ROOT / "public" / "game_filters.js")),
     web.get("/episode_ui.js", lambda request: web.FileResponse(ROOT / "public" / "episode_ui.js")),
     web.get("/episode_ui.css", lambda request: web.FileResponse(ROOT / "public" / "episode_ui.css")),
     web.get("/profile-maker", lambda request: web.FileResponse(ROOT / "public" / "profile_maker.html")),
