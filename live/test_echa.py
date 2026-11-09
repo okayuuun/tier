@@ -145,6 +145,34 @@ async def main():
         await take_type(one,'remove')
         await take_type(two,'remove')
         assert len(ROOMS[code]['strokes'])==0
+        # Reconnecting an artist with the one-time room credential must not
+        # create a new seat, identity or lose ownership of old strokes.
+        token=second['resumeToken']
+        assert token and first['resumeToken']!=token
+        restored=await client.ws_connect('/api/echa/ws')
+        await restored.send_json({'type':'join','code':code,'name':'参加者',
+                                  'resumeToken':token})
+        resumed=await take_type(restored,'snapshot')
+        assert resumed['me']==second['me']
+        assert resumed['resumeToken']==token
+        assert len(resumed['members'])==2
+        assert not resumed['owner']
+        await take_type(restored,'members')
+        await take_type(one,'members')
+        await restored.send_json({'type':'ping'})
+        pong=await take_type(restored,'pong')
+        assert pong['type']=='pong'
+        await restored.send_json(stroke)
+        await take_type(one,'begin')
+        await restored.send_json({'type':'end'})
+        await take_type(one,'end')
+        await take_type(restored,'end')
+        assert ROOMS[code]['strokes'][-1]['by']==second['me']
+        await restored.send_json({'type':'undo'})
+        await take_type(one,'remove')
+        await take_type(restored,'remove')
+        assert ROOMS[code]['strokes']==[]
+        await restored.close()
         await two.close()
         await one.close()
     assert style_of({'color':'#ffaa22','width':2,'opacity':.2,'tool':'eraser'})['tool']=='eraser'
@@ -153,6 +181,6 @@ async def main():
         try:f()
         except ValueError:pass
         else:raise AssertionError('invalid drawing input accepted')
-    print('PASS: echa layers, flood fill events, reference validation, cooldown, undo, chat and host controls')
+    print('PASS: echa multiplayer, artist resume, heartbeat, drawing ownership, fill, layers and undo')
 
 asyncio.run(main())
