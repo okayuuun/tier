@@ -598,6 +598,11 @@ async def websocket(request):
                 obj = json.loads(msg.data)
                 if not isinstance(obj, dict):
                     raise ValueError("不正な通信です")
+                if obj.get("type") == "ping":
+                    # Reply directly without creating an admin activity entry.
+                    # Client keepalive also prevents unintended idle sleep.
+                    await ws.send_json({"type":"pong","at":time.time()})
+                    continue
                 old_room = ctx["room"]
                 old_phase = old_room["phase"] if old_room else None
                 old_pid = ctx["pid"]
