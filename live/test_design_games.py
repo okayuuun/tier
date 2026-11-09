@@ -28,12 +28,12 @@ def test_invention(n):
         assert r["phase"]=="inv_vote"
         assert all("name" not in e for e in see(r,a[0])["entries"])
         rejects(lambda:go(r,a[0],"inv_vote",target=a[0]))
-        for i,pid in enumerate(a):go(r,pid,"inv_vote",target=a[(i+1)%n])
+        for i,pid in enumerate(a):go(r,pid,"inv_vote",ratings={axis:a[(i+1)%n] for axis in ("cute","fun","original")})
         assert r["phase"]=="inv_reveal"
         assert len(see(r,a[0])["last"]["entries"])==n
         go(r,a[0],"inv_next")
     assert r["phase"]=="final" and len(see(r,a[0])["history"])==3
-    assert sum(r["points"].values())==n*3*2
+    assert sum(r["points"].values())==n*3*3
 
 def test_character(n):
     r=room("chardesign",n);start(r);a=r["active"]
@@ -50,12 +50,12 @@ def test_character(n):
         chosen=see(r,judge)["entries"][0]["id"]
         assert all("name" not in e for e in see(r,judge)["entries"])
         rejects(lambda:go(r,a[(index+1)%n],"char_pick",target=chosen))
-        go(r,judge,"char_pick",target=chosen)
+        go(r,judge,"char_pick",target=chosen,ratings={axis:chosen for axis in ("cute","fun","original")})
         assert r["phase"]=="char_reveal"
         go(r,a[0],"char_next")
     assert r["phase"]=="final"
     assert len(see(r,a[0])["history"])==min(4,n)
-    assert sum(r["points"].values())==3*min(4,n)
+    assert sum(r["points"].values())==6*min(4,n)
 
 assert {"invent","chardesign"}<=GAME_IDS
 assert {"inv_submit","inv_vote","char_submit","char_pick"}<=EVENTS
