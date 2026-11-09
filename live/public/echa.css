@@ -39,3 +39,14 @@
 .ec-bucket-options select{font-size:12px;max-width:100%;border-radius:9px;padding:8px 11px;background:#fff;color:#50395c;border:1px solid #bea2d9}
 .ec-bucket-help{display:block;flex:1 1 280px;font-weight:750;color:#755978!important}
 @media(max-width:650px){.ec-bucket-options{gap:10px}.ec-bucket-options label{flex:1 1 200px}.ec-bucket-options input[type=range]{flex:1}.ec-bucket-options select{width:100%}}
+
+/* iOS Safari may select ancestor text after a long press unless the entire
+   drawing hit area AND its children prohibit selection and touch callouts. */
+.ec-workspace,.ec-workspace *,.ec-board,.ec-board *{
+  -webkit-user-select:none!important;user-select:none!important;
+  -webkit-touch-callout:none!important;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-user-drag:none;
+}
+.ec-workspace ::selection{background:transparent;color:inherit}
+.ec-workspace ::-moz-selection{background:transparent;color:inherit}

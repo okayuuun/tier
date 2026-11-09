@@ -15,3 +15,14 @@
  font-weight:750;color:#654576}
 .nkb-zoom-bar button{padding:8px 12px;border:1px solid #c8a5d7;border-radius:8px;
  font-size:12px;font-weight:850;color:#653b83;background:#fff}
+
+/* Safari long-press selection/callout guards. Don't affect form fields or chat. */
+.nkb-zoom-viewport,.nkb-zoom-viewport *,
+.draw-board,.draw-board *{
+  -webkit-user-select:none!important;user-select:none!important;
+  -webkit-touch-callout:none!important;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-user-drag:none;
+}
+.nkb-zoom-viewport ::selection,.draw-board ::selection{background:transparent;color:inherit}
+.nkb-zoom-viewport ::-moz-selection,.draw-board ::-moz-selection{background:transparent;color:inherit}
