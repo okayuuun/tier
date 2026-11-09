@@ -19,8 +19,8 @@ const NKMBrush=(()=>{
  </div>
  <div class="nkb-row"><label>編集レイヤー <select onchange="NKMBrush.choose('${safe(key)}',this.value)">${opts}</select></label>
   <button type="button" onclick="NKMBrush.add('${safe(key)}')">＋ レイヤー</button>
-  <button type="button" onclick="NKMBrush.move('${safe(key)}',-1)">前面へ</button>
-  <button type="button" onclick="NKMBrush.move('${safe(key)}',1)">背面へ</button>
+  <button type="button" onclick="NKMBrush.move('${safe(key)}',1)">前面へ</button>
+  <button type="button" onclick="NKMBrush.move('${safe(key)}',-1)">背面へ</button>
   <button type="button" onclick="NKMBrush.visibility('${safe(key)}')">${l.visible?'👁 表示中':'🙈 非表示'}</button></div>
  <div class="nkb-row">
   <label>レイヤーの透明度 <input type="range" min="0" max="100" value="${Math.round(l.opacity*100)}" oninput="NKMBrush.layerOpacity('${safe(key)}',this.value,this)"> <span>${Math.round(l.opacity*100)}%</span></label>
@@ -106,6 +106,6 @@ const NKMBrush=(()=>{
  function ordered(strokes,d){let items=[...strokes].sort((a,b)=>(a.layer??0)-(b.layer??0));if(!d)return items;prepare(d);return items.filter(s=>d.layers[s.layer??0]?.visible!==false).map(s=>({...s,a:Number((Math.min(1,Math.max(.05,s.a??1))*(d.layers[s.layer??0]?.opacity??1)).toFixed(3))}));}
  function newStroke(d,p){prepare(d);return {c:d.color,w:d.size||5,p:[p],layer:d.layerIndex,a:d.brushOpacity}}
  function undo(d){prepare(d);for(let i=d.strokes.length-1;i>=0;i--){if((d.strokes[i].layer??0)===d.layerIndex){d.strokes.splice(i,1);return}}}
- function exportStrokes(d){return ordered(d.strokes,d).map(s=>({c:s.c,w:s.w,p:s.p,layer:s.layer??0,a:s.a??1}))}
+ function exportStrokes(d){return ordered(d.strokes,d).filter(s=>s.a>=0.01).map(s=>({c:s.c,w:s.w,p:s.p,layer:s.layer??0,a:s.a??1}))}
  return {panel,prepare,ordered,newStroke,undo,exportStrokes,choose,add,visibility,layerOpacity,brushOpacity,color,erase,storedSwatches,saveSwatch,tool,move,eraseAt,interact,savePNG};
 })();
