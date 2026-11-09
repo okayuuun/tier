@@ -87,12 +87,78 @@ function myAnswerText(){return challenge.spec.characters.map(c=>`【${c.label}�
 async function copyMyAnswer(){try{await navigator.clipboard.writeText(myAnswerText());alert('自分の回答をコピーしました')}catch(_){prompt('コピーしてください',myAnswerText())}}
 function replay(){loadPlay(challenge.id)}
 async function loadResults(id,key){mode='results';manageId=id;manageKey=key;root.innerHTML=card('作者用の結果','回答一覧を読み込んでいます…');try{resultData=await postJSON('/api/milli/'+encodeURIComponent(id)+'/manage',{ownerKey:key});renderResults()}catch(e){root.innerHTML=card('作者用の結果を開けませんでした',`<p class="error">${E(e.message)}</p><a href="/milli">ホームに戻る</a>`)}}
-function renderResults(){if(!resultData)return;const spec=resultData.spec,results=resultData.responses;root.innerHTML=`<div class="hero"><span class="pill">AUTHOR ONLY / 結果一覧</span><h1>${E(spec.title)}</h1><p>${E(spec.series)} · 回答 ${results.length}件</p></div>${card('回答の管理',`<p class="notice">この画面のURLには作者専用の秘密キーが含まれます。他人には回答者用リンクだけを送ってください。</p><div class="bar">${btn('回答を更新','refreshResults()')}${btn('JSONで書き出す','exportResults()','sub')}${btn('CSVで書き出す','exportCSV()','outline')}<a href="/milli" class="btn sub" style="text-decoration:none">作成画面</a></div><p class="muted">公開セットは発行から30日間有効です。Render無料環境の再デプロイでデータが消える場合があります。</p>`)}${results.length?results.map((r,i)=>card(`${i+1}. ${r.name} さん`, `<p class="muted">${new Date(r.created*1000).toLocaleString('ja-JP')}</p>`+spec.characters.map(c=>`<details class="question"><summary><b>${E(c.label)}</b></summary>${c.image?`<img src="${E(c.image)}" class="smallimg" alt="">`:''}${c.fields.map(f=>`<p><b>${E(f.label)}</b><span style="display:block;white-space:pre-wrap">${E(r.answers?.[c.id]?.[f.id]||'（未回答）')}</span></p>`).join('')}</details>`).join(''))).join(''):card('まだ回答がありません','回答者に共有リンクを送ってください。')}`}
+function renderResults(){
+ if(!resultData)return;
+ const spec=resultData.spec,results=resultData.responses;
+ root.innerHTML=`<div class="hero"><span class="pill">AUTHOR ONLY / 結果一覧</span><h1>${E(spec.title)}</h1><p>${E(spec.series)} · 回答 ${results.length}件</p></div>
+ ${card('回答・展示会の管理',`<p class="notice">このページのURLには作者専用の秘密キーが含まれます。絶対に他人へ送らないでください。</p>
+ <p>展示会：<b>${resultData.galleryEnabled?'公開中':'非公開'}</b>。公開すると、公式設定と、掲載に同意した回答者の名前・回答をリンクを知る人が見られます。</p>
+ <div class="bar">${btn('回答を更新','refreshResults()')}${btn('JSONで書き出す','exportResults()','sub')}${btn('CSVで書き出す','exportCSV()','outline')}
+ ${btn(resultData.galleryEnabled?'展示会を非公開にする':'展示会を公開する','toggleGallery()','gold')}
+ <a href="/milli#gallery:${E(manageId)}" class="btn sub" style="text-decoration:none">展示会を見る</a>
+ <a href="/milli" class="btn sub" style="text-decoration:none">作成画面</a></div>
+ <p class="muted">作者の回答一覧には掲載同意がない回答も表示されます。セットは発行から30日間有効で、無料Renderの再デプロイでデータを失う場合があります。</p>`)}
+ ${results.length?card('キャラクター別の答え合わせ・比較',compareAnswers(spec,results)):''}
+ ${results.length?results.map((r,i)=>card(`${i+1}. ${E(r.name)} さん`, `<p class="muted">${new Date(r.created*1000).toLocaleString('ja-JP')} ／ 展示会への掲載：${r.showcase?'同意あり':'同意なし'}</p>`+spec.characters.filter(c=>r.answers?.[c.id]).map(c=>`<details class="question"><summary><b>${E(c.label)}</b></summary>${c.image?`<img src="${E(c.image)}" class="smallimg" alt="">`:''}${c.fields.map(f=>`<p><b>${E(f.label)}</b><span style="display:block;white-space:pre-wrap">${E(r.answers?.[c.id]?.[f.id]||'（未回答）')}</span></p>`).join('')}</details>`).join(''))).join(''):card('まだ回答がありません','回答者用の共有リンクを送ってください。')}`
+}
+function compareAnswers(spec,results){
+ return spec.characters.map(c=>`<details class="question"><summary><b>${E(c.label)}</b> ／ 回答者の比較</summary>
+ ${c.image?`<img class="smallimg" src="${E(c.image)}" alt="">`:''}
+ ${c.truthNote?`<p class="milli-truth"><b>本当の設定：</b>${E(c.truthNote)}</p>`:''}
+ ${c.fields.map(f=>`<div class="milli-compare"><b>${E(f.label)}</b>
+ ${f.truth?`<p class="milli-truth">公式・正解：${E(f.truth)}</p>`:''}
+ ${results.filter(r=>r.answers?.[c.id]).map(r=>`<p><strong>${E(r.name)}：</strong> ${E(r.answers?.[c.id]?.[f.id]||'（未回答）')}</p>`).join('')||'<p class="muted">出題された回答はありません。</p>'}</div>`).join('')}
+ </details>`).join('')
+}
+async function toggleGallery(){
+ if(!resultData)return;
+ const enabled=!resultData.galleryEnabled;
+ if(enabled&&!confirm('展示会を公開しますか？ 公式設定と、掲載に同意した回答者の名前・回答が、展示会URLを知る人に表示されます。'))return;
+ try{
+  const d=await postJSON('/api/milli/'+encodeURIComponent(manageId)+'/gallery-toggle',{ownerKey:manageKey,enabled});
+  resultData.galleryEnabled=d.galleryEnabled;renderResults()
+ }catch(e){alert('展示会の公開設定を変更できませんでした：'+e.message)}
+}
+async function loadGallery(id){
+ galleryId=id;mode='gallery';
+ root.innerHTML=card('展示会を読み込んでいます','公開された回答を確認します…');
+ try{
+  const r=await fetch('/api/milli/'+encodeURIComponent(id)+'/gallery',{cache:'no-store'});
+  if(!r.ok)throw new Error((await r.text()).slice(0,180));
+  galleryData=await r.json();renderGallery()
+ }catch(e){
+  root.innerHTML=card('展示会はまだ公開されていません',`<p class="muted">${E(e.message)}</p><a href="/milli#play:${E(id)}">回答画面に戻る</a>`)
+ }
+}
+function renderGallery(){
+ if(!galleryData)return;
+ const spec=galleryData.spec,entries=galleryData.responses;
+ root.innerHTML=`<div class="hero"><span class="pill">MILLISHIRA / REVEAL & GALLERY</span><h1>🎭 ミリしら答え合わせ</h1><p>${E(spec.title)} ／ ${E(spec.series)}　公開同意済み：${entries.length}件</p></div>
+ ${card('本当の設定とみんなの想像',spec.characters.map(c=>`<details class="question"><summary><b>${E(c.label)}</b></summary>
+ ${c.image?`<img class="smallimg" src="${E(c.image)}" alt="">`:''}
+ ${c.truthNote?`<p class="milli-truth">${E(c.truthNote)}</p>`:''}
+ ${c.fields.map(f=>`<div class="milli-compare"><b>${E(f.label)}</b><p class="milli-truth">本当の答え：${E(f.truth||'（作者の入力なし）')}</p>
+ ${entries.filter(r=>r.answers?.[c.id]).map(r=>`<p><strong>${E(r.name)}：</strong> ${E(r.answers?.[c.id]?.[f.id]||'（未回答）')}</p>`).join('')||'<p class="muted">公開された回答はまだありません。</p>'}</div>`).join('')}
+ </details>`).join(''))}
+ ${card('一番面白かった回答に投票',entries.length?entries.map(r=>`<div class="milli-vote"><b>${E(r.name)} さん</b><span>${r.votes}票</span>${btn('この人に投票',`vote(${r.id})`,'sub')}</div>`).join('')+'<p class="muted">回答済みの人が1セットにつき1票。投票の変更はできますが、自分には投票できません。</p>':'展示への掲載に同意した回答はまだありません。')}
+ ${card('共有・戻る',`<div class="bar">${btn('展示会URLをコピー','copyGallery()','sub')}<a class="btn outline" href="/milli">ミリしらのトップへ</a></div>`)}`
+}
+async function vote(responseId){
+ const token=localStorage.getItem('nakami_milli_voter_'+galleryId)||'';
+ if(!token)return alert('回答を送信したブラウザから投票してください');
+ try{await postJSON('/api/milli/'+encodeURIComponent(galleryId)+'/vote',{voterToken:token,responseId});await loadGallery(galleryId)}
+ catch(e){alert('投票できませんでした：'+e.message)}
+}
+async function copyGallery(){
+ const url=location.origin+'/milli#gallery:'+galleryId;
+ try{await navigator.clipboard.writeText(url);alert('展示会URLをコピーしました')}
+ catch(_){prompt('こちらをコピーしてください',url)}
+}
 function refreshResults(){loadResults(manageId,manageKey)}
 function exportResults(){download('millishira-results.json',JSON.stringify(resultData,null,2),'application/json')}
-function exportCSV(){const d=resultData,s=d.spec;const headers=['名前','回答日時',...s.characters.flatMap(c=>c.fields.map(f=>c.label+' / '+f.label))];let rows=d.responses.map(r=>[r.name,new Date(r.created*1000).toISOString(),...s.characters.flatMap(c=>c.fields.map(f=>r.answers[c.id][f.id]))]);const enc=r=>r.map(x=>'"'+String(x||'').replace(/"/g,'""')+'"').join(',');download('millishira-results.csv','\ufeff'+[headers,...rows].map(enc).join('\r\n'),'text/csv;charset=utf-8')}
+function exportCSV(){const d=resultData,s=d.spec;const headers=['名前','回答日時',...s.characters.flatMap(c=>c.fields.map(f=>c.label+' / '+f.label))];let rows=d.responses.map(r=>[r.name,new Date(r.created*1000).toISOString(),...s.characters.flatMap(c=>c.fields.map(f=>r.answers?.[c.id]?.[f.id]||''))]);const enc=r=>r.map(x=>'"'+String(x||'').replace(/"/g,'""')+'"').join(',');download('millishira-results.csv','\ufeff'+[headers,...rows].map(enc).join('\r\n'),'text/csv;charset=utf-8')}
 function download(name,text,type){const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
-function route(){const h=decodeURIComponent(location.hash.slice(1));if(h.startsWith('play:'))return loadPlay(h.slice(5));if(h.startsWith('results:')){const parts=h.split(':');if(parts.length===3)return loadResults(parts[1],parts[2])}home()}
+function route(){const h=decodeURIComponent(location.hash.slice(1));if(h.startsWith('play:'))return loadPlay(h.slice(5));if(h.startsWith('gallery:'))return loadGallery(h.slice(8));if(h.startsWith('results:')){const parts=h.split(':');if(parts.length===3)return loadResults(parts[1],parts[2])}home()}
 window.addEventListener('hashchange',route);route();
-return{home,create,edit,remove,update,changeChar,updateField,updateOptions,addChar,cloneChar,removeChar,addField,removeField,moveField,addLifeField,copyQuestions,moveChar,setURL,removeImage,imageUpload,selectChar,saveCurrent,exportCurrent,openImport,importFile,publish,copyLink,goResults,updateAnswer,prevAnswer,nextAnswer,submit,copyMyAnswer,replay,refreshResults,exportResults,exportCSV};
+return{home,create,edit,remove,update,changeChar,updateField,updateOptions,addChar,cloneChar,removeChar,addField,removeField,moveField,addLifeField,copyQuestions,moveChar,setURL,removeImage,imageUpload,selectChar,saveCurrent,exportCurrent,openImport,importFile,publish,copyLink,goResults,updateAnswer,setShowcase,prevAnswer,nextAnswer,submit,copyMyAnswer,replay,refreshResults,exportResults,exportCSV,toggleGallery,loadGallery,renderGallery,vote,copyGallery};
 })();
