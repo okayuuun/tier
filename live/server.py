@@ -726,6 +726,7 @@ app.add_routes([
 app.add_routes([
     web.get('/echa', lambda request: web.FileResponse(ROOT / 'public' / 'echa.html')),
     web.get('/echa.js', lambda request: web.FileResponse(ROOT / 'public' / 'echa.js')),
+    web.get('/echa_fill.js', lambda request: web.FileResponse(ROOT / 'public' / 'echa_fill.js')),
     web.get('/echa.css', lambda request: web.FileResponse(ROOT / 'public' / 'echa.css')),
 ])
 register_echa(app)
