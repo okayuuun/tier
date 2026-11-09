@@ -19,7 +19,7 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
@@ -27,6 +27,7 @@ LABELS = {
     "unique": "全員不一致", "wolf": "ワードウルフ",
     "senryu": "昼ドラ川柳", "tanka": "５７５７７（ゴーシチゴーシチシチ）", "booktitle": "横暴編集長",
     "artguide": "こっそり絵の指示書", "drawrelay": "お絵描き伝言リレー",
+    "artcontest": "お絵描き作品コンテスト", "artforbid": "NGお絵描き", "drawbluff": "絵のタイトル当て",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
@@ -138,6 +139,9 @@ class MasterAdmin:
             p = room["party"]
             details = {"type": "party", "rounds": p.get("history", p.get("rounds", [])),
                        "round": p.get("round"), "rings": p.get("rings"), "lives": p.get("lives")}
+        elif room.get("drawextra"):
+            p=room["drawextra"]
+            details={"type":"drawing_extra","round":p.get("round"),"rounds":[{"round":r.get("round"),"topic":r.get("topic"),"winners":r.get("winners"),"prompt":r.get("prompt"),"votes":[x.get("votes") for x in r.get("entries",[])]} for r in p.get("history",[])]}
         elif room.get("draw"):
             p=room["draw"]
             if room.get("game")=="artguide":
