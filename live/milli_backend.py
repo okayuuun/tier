@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import re
+import random
 import secrets
 import time
 from aiohttp import web
@@ -22,6 +23,16 @@ class MilliService:
         self.db.execute('CREATE TABLE IF NOT EXISTS milli_forms (id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, created REAL NOT NULL, expires REAL NOT NULL, spec TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS milli_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, form_id TEXT NOT NULL, created REAL NOT NULL, player TEXT NOT NULL, answers TEXT NOT NULL)')
         self.db.execute('CREATE INDEX IF NOT EXISTS milli_response_form ON milli_responses(form_id,created)')
+        # Existing deployments may already contain rows in both tables.
+        form_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_forms)')}
+        reply_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_responses)')}
+        if 'gallery_enabled' not in form_cols:
+            self.db.execute('ALTER TABLE milli_forms ADD COLUMN gallery_enabled INTEGER NOT NULL DEFAULT 0')
+        if 'showcase' not in reply_cols:
+            self.db.execute('ALTER TABLE milli_responses ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0')
+        if 'voter_hash' not in reply_cols:
+            self.db.execute('ALTER TABLE milli_responses ADD COLUMN voter_hash TEXT NOT NULL DEFAULT ""')
+        self.db.execute('CREATE TABLE IF NOT EXISTS milli_votes (form_id TEXT NOT NULL, voter_hash TEXT NOT NULL, response_id INTEGER NOT NULL, created REAL NOT NULL, PRIMARY KEY (form_id,voter_hash))')
         self.db.commit()
 
     def check_published(self):
@@ -31,6 +42,7 @@ class MilliService:
     def clean(self):
         now = time.time()
         self.db.execute('DELETE FROM milli_responses WHERE form_id IN (SELECT id FROM milli_forms WHERE expires<?)',(now,))
+        self.db.execute('DELETE FROM milli_votes WHERE form_id IN (SELECT id FROM milli_forms WHERE expires<?)',(now,))
         self.db.execute('DELETE FROM milli_forms WHERE expires<?',(now,))
         self.db.commit()
 
@@ -70,9 +82,15 @@ class MilliService:
                 options=q.get('options',[]) if kind=='choice' else []
                 if not isinstance(options,list) or (kind=='choice' and not 2<=len(options)<=12):raise ValueError('選択肢は2〜12個までです')
                 options=[self.strval(s,70,1) for s in options]
-                clean_fields.append({'id':qid,'label':self.strval(q.get('label'),90,1),'type':kind,'options':options})
-            validated.append({'id':cid,'label':label,'image':img,'fields':clean_fields})
-        spec={'v':1,'title':title,'series':series,'characters':validated}
+                clean_fields.append({'id':qid,'label':self.strval(q.get('label'),90,1),'type':kind,'options':options,'truth':self.strval(q.get('truth',''),600)})
+            validated.append({'id':cid,'label':label,'image':img,'fields':clean_fields,'truthNote':self.strval(item.get('truthNote',''),1200)})
+        random_count=raw.get('randomCount',0)
+        if not isinstance(random_count,int) or isinstance(random_count,bool) or not 0<=random_count<=len(validated):
+            raise ValueError('ランダム出題数を確認してください')
+        hide_series=raw.get('hideSeries',False)
+        if not isinstance(hide_series,bool):raise ValueError('作品名の表示設定が不正です')
+        spec={'v':2,'title':title,'series':series,'characters':validated,
+              'randomCount':random_count,'hideSeries':hide_series}
         if len(json.dumps(spec,ensure_ascii=False).encode())>650000:raise ValueError('画像を含むセットは650KB以内にしてください')
         return spec
 
@@ -97,10 +115,24 @@ class MilliService:
         if not row:raise web.HTTPNotFound(text='セットが見つかりません（期限切れ・再デプロイの可能性があります）')
         return row
 
+    @staticmethod
+    def public_spec(spec, shuffle=False):
+        """Remove all canonical facts before sending the guessing form to players."""
+        view=json.loads(json.dumps(spec,ensure_ascii=False))
+        for c in view['characters']:
+            c.pop('truthNote',None)
+            for q in c['fields']:q.pop('truth',None)
+        if view.get('hideSeries'):view['series']=''
+        if shuffle and view.get('randomCount',0):
+            view['characters']=random.sample(view['characters'],view['randomCount'])
+        return view
+
     async def public(self,request):
         self.check_published()
         row=self.get(request.match_info['id'])
-        return web.json_response({'spec':json.loads(row['spec']),'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
+        return web.json_response({'spec':self.public_spec(json.loads(row['spec']),shuffle=True),
+                                  'galleryEnabled':bool(row['gallery_enabled']),
+                                  'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
 
     async def submit(self,request):
         self.check_published()
@@ -111,9 +143,13 @@ class MilliService:
             answers=raw.get('answers')
             if not isinstance(answers,dict):raise ValueError('回答の形式が不正です')
             expected={item['id']:{q['id']:q for q in item['fields']} for item in spec['characters']}
-            if set(answers)!=set(expected):raise ValueError('すべてのキャラクターに回答してください')
+            chosen=set(answers)
+            random_count=spec.get('randomCount',0)
+            if (not random_count and chosen!=set(expected)) or (random_count and (len(chosen)!=random_count or not chosen<=set(expected))):
+                raise ValueError('出題されたキャラクターに回答してください')
             saved={}
-            for cid,fields in expected.items():
+            for cid in chosen:
+                fields=expected[cid]
                 val=answers[cid]
                 if not isinstance(val,dict) or set(val)!=set(fields):raise ValueError('質問に漏れがあります')
                 saved[cid]={}
@@ -122,27 +158,90 @@ class MilliService:
                     if q['type']=='choice' and answer and answer not in q['options']:raise ValueError('選択肢にない回答です')
                     saved[cid][fid]=answer
             if len(json.dumps(saved,ensure_ascii=False).encode())>65000:raise ValueError('回答が長すぎます')
+            showcase=raw.get('showcase',False)
+            if not isinstance(showcase,bool):raise ValueError('公開の同意設定が不正です')
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:raise web.HTTPBadRequest(text=str(exc))
         n=self.db.execute('SELECT COUNT(*) FROM milli_responses WHERE form_id=?',(request.match_info['id'],)).fetchone()[0]
         if n>=MAX_RESPONSES:raise web.HTTPTooManyRequests(text='回答受付数の上限です')
         now=time.time()
-        self.db.execute('INSERT INTO milli_responses(form_id,created,player,answers) VALUES(?,?,?,?)',
-                        (request.match_info['id'],now,name,json.dumps(saved,ensure_ascii=False)))
+        voter_token=secrets.token_urlsafe(24)
+        self.db.execute('INSERT INTO milli_responses(form_id,created,player,answers,showcase,voter_hash) VALUES(?,?,?,?,?,?)',
+                        (request.match_info['id'],now,name,json.dumps(saved,ensure_ascii=False),
+                         int(showcase),hashlib.sha256(voter_token.encode()).hexdigest()))
         self.db.commit()
         self.master.log_action({'code':request.match_info['id'],'game':'millishira'},name,'milli_submit','ミリしら回答')
-        return web.json_response({'ok':True,'receivedAt':now},headers={'Cache-Control':'no-store'})
+        return web.json_response({'ok':True,'receivedAt':now,'voterToken':voter_token},headers={'Cache-Control':'no-store'})
+
+    @staticmethod
+    def require_owner(row,key):
+        if not isinstance(key,str) or not hmac.compare_digest(hashlib.sha256(key.encode()).hexdigest(),row['key_hash']):
+            raise web.HTTPForbidden(text='作者専用キーが違います')
 
     async def manage(self,request):
         row=self.get(request.match_info['id'])
         try: key=(await request.json()).get('ownerKey','')
         except (ValueError,TypeError,json.JSONDecodeError):raise web.HTTPBadRequest(text='管理情報が不正です')
-        if not isinstance(key,str) or not hmac.compare_digest(hashlib.sha256(key.encode()).hexdigest(),row['key_hash']):
-            raise web.HTTPForbidden(text='作者専用キーが違います')
+        self.require_owner(row,key)
         result=self.db.execute('SELECT id,created,player,answers FROM milli_responses WHERE form_id=? ORDER BY created DESC LIMIT 150',(request.match_info['id'],)).fetchall()
         return web.json_response({'spec':json.loads(row['spec']),
-                                  'responses':[{'id':r['id'],'created':r['created'],'name':r['player'],'answers':json.loads(r['answers'])} for r in result],
+                                  'galleryEnabled':bool(row['gallery_enabled']),
+                                  'responses':[{'id':r['id'],'created':r['created'],'name':r['player'],
+                                                'showcase':bool(r['showcase']),'answers':json.loads(r['answers'])} for r in result],
                                   'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
+
+    async def gallery_toggle(self,request):
+        self.check_published()
+        row=self.get(request.match_info['id'])
+        try:
+            body=await request.json()
+            self.require_owner(row,body.get('ownerKey',''))
+            enabled=body.get('enabled')
+            if not isinstance(enabled,bool):raise ValueError('公開設定が不正です')
+        except (ValueError,TypeError,AttributeError,json.JSONDecodeError) as exc:
+            raise web.HTTPBadRequest(text=str(exc))
+        self.db.execute('UPDATE milli_forms SET gallery_enabled=? WHERE id=?',(int(enabled),row['id']))
+        self.db.commit()
+        return web.json_response({'ok':True,'galleryEnabled':enabled},headers={'Cache-Control':'no-store'})
+
+    async def gallery(self,request):
+        self.check_published()
+        row=self.get(request.match_info['id'])
+        if not row['gallery_enabled']:raise web.HTTPForbidden(text='作者がまだ答え合わせを公開していません')
+        spec=json.loads(row['spec'])
+        # Only respondents who explicitly consented are shown to other players.
+        responses=self.db.execute('SELECT id,player,answers FROM milli_responses WHERE form_id=? AND showcase=1 ORDER BY id DESC LIMIT 150',(row['id'],)).fetchall()
+        votes={r['response_id']:r['n'] for r in self.db.execute(
+            'SELECT response_id,COUNT(*) n FROM milli_votes WHERE form_id=? GROUP BY response_id',(row['id'],))}
+        return web.json_response({'spec':spec,
+            'responses':[{'id':r['id'],'name':r['player'],'answers':json.loads(r['answers']),
+                          'votes':votes.get(r['id'],0)} for r in responses],
+            'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
+
+    async def vote(self,request):
+        self.check_published()
+        row=self.get(request.match_info['id'])
+        if not row['gallery_enabled']:raise web.HTTPForbidden(text='展示会はまだ公開されていません')
+        try:
+            raw=await request.json()
+            token=self.strval(raw.get('voterToken',''),100,10)
+            choice=raw.get('responseId')
+            if not isinstance(choice,int) or isinstance(choice,bool):raise ValueError('投票先が不正です')
+        except (ValueError,TypeError,AttributeError,json.JSONDecodeError) as exc:
+            raise web.HTTPBadRequest(text=str(exc))
+        token_hash=hashlib.sha256(token.encode()).hexdigest()
+        voter=self.db.execute('SELECT id FROM milli_responses WHERE form_id=? AND voter_hash=?',(row['id'],token_hash)).fetchone()
+        target=self.db.execute('SELECT id FROM milli_responses WHERE form_id=? AND id=? AND showcase=1',(row['id'],choice)).fetchone()
+        if not voter:raise web.HTTPForbidden(text='回答を送信した人だけが投票できます')
+        if not target or voter['id']==choice:raise web.HTTPBadRequest(text='自分の回答や非公開回答には投票できません')
+        self.db.execute('INSERT INTO milli_votes(form_id,voter_hash,response_id,created) VALUES(?,?,?,?) '
+                        'ON CONFLICT(form_id,voter_hash) DO UPDATE SET response_id=excluded.response_id,created=excluded.created',
+                        (row['id'],token_hash,choice,time.time()))
+        self.db.commit()
+        return web.json_response({'ok':True},headers={'Cache-Control':'no-store'})
 
     def register(self,app):
         app.add_routes([web.post('/api/milli',self.publish),web.get('/api/milli/{id}',self.public),
-                        web.post('/api/milli/{id}/submit',self.submit),web.post('/api/milli/{id}/manage',self.manage)])
+                        web.post('/api/milli/{id}/submit',self.submit),web.post('/api/milli/{id}/manage',self.manage),
+                        web.post('/api/milli/{id}/gallery-toggle',self.gallery_toggle),
+                        web.get('/api/milli/{id}/gallery',self.gallery),
+                        web.post('/api/milli/{id}/vote',self.vote)])
