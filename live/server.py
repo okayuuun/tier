@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
 from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format, validate_deck as validate_word_deck
+from design_games import GAME_IDS as DESIGN_IDS, EVENTS as DESIGN_EVENTS, start as design_start, snapshot as design_snapshot, handle as design_handle
 from draw_mix import GAME_IDS as DRAW_MIX_IDS, EVENTS as DRAW_MIX_EVENTS, start as draw_mix_start, snapshot as draw_mix_snapshot, handle as draw_mix_handle
 from draw_extra import GAME_IDS as ART_EXTRA_IDS, EVENTS as ART_EXTRA_EVENTS, start as art_extra_start, snapshot as art_extra_snapshot, handle as art_extra_handle
 from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as draw_start, snapshot as draw_snapshot, handle as draw_handle
@@ -25,6 +26,8 @@ MAX_PLAYERS = 12
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
+    "invent": {"title": "発明プレゼン大会"},
+    "chardesign": {"title": "キャラクターデザイン依頼"},
     "artmix": {"title": "イラスト×セリフ大合体"},
     "artcollab": {"title": "合作お絵描き"},
     "reverseart": {"title": "逆お絵描きクイズ"},
@@ -118,6 +121,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in DESIGN_IDS and room['phase'] != 'lobby':
+        return design_snapshot(room,pid)
     if room['game'] in DRAW_MIX_IDS and room['phase'] != 'lobby':
         return draw_mix_snapshot(room,pid)
     if room['game'] in ART_EXTRA_IDS and room['phase'] != 'lobby':
@@ -323,6 +328,12 @@ async def handle_event(ws, context, obj):
         room["wordFormat"] = fmt
         await broadcast(room)
         return
+    if t in DESIGN_EVENTS:
+        if room['game'] not in DESIGN_IDS or room['phase']=='lobby':
+            raise ValueError('このゲームではこの操作を使えません')
+        design_handle(room,pid,t,obj,is_owner)
+        await broadcast(room)
+        return
     if t in DRAW_MIX_EVENTS:
         if room['game'] not in DRAW_MIX_IDS or room['phase']=='lobby':
             raise ValueError('このゲームではこの操作を使えません')
@@ -399,6 +410,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in DESIGN_IDS:
+            design_start(room)
         elif room['game'] in DRAW_MIX_IDS:
             draw_mix_start(room)
         elif room['game'] in ART_EXTRA_IDS:
@@ -580,7 +593,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","px_reveal", "db_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
@@ -664,6 +677,7 @@ app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/
     web.get("/more_rules.js", lambda request: web.FileResponse(ROOT / "public" / "more_rules.js")),
     web.get("/feedback.js", lambda request: web.FileResponse(ROOT / "public" / "feedback.js")),
     web.get("/feedback.css", lambda request: web.FileResponse(ROOT / "public" / "feedback.css")), web.get("/party.css", lambda request: web.FileResponse(ROOT / "public" / "party.css")), web.get("/rules.js", lambda request: web.FileResponse(ROOT / "public" / "rules.js")), web.get("/rules.css", lambda request: web.FileResponse(ROOT / "public" / "rules.css")), web.get("/ws", websocket), web.get("/health", health)])
+app.add_routes([web.get("/design_ui.js", lambda request: web.FileResponse(ROOT / "public" / "design_ui.js")), web.get("/design_ui.css", lambda request: web.FileResponse(ROOT / "public" / "design_ui.css")), web.get("/design_rules.js", lambda request: web.FileResponse(ROOT / "public" / "design_rules.js"))])
 app.add_routes([web.get("/draw_mix_ui.js", lambda request: web.FileResponse(ROOT / "public" / "draw_mix_ui.js")), web.get("/draw_mix_ui.css", lambda request: web.FileResponse(ROOT / "public" / "draw_mix_ui.css")), web.get("/draw_mix_rules.js", lambda request: web.FileResponse(ROOT / "public" / "draw_mix_rules.js"))])
 app.add_routes([
     web.get("/master", lambda request: web.FileResponse(ROOT / "public" / "master.html")),
