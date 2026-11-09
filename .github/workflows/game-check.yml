@@ -37,6 +37,8 @@ jobs:
         run: python live/test_milli.py
       - name: Test anonymous episode game
         run: python live/test_episode.py
+      - name: Test full multiplayer WebSocket connection and resume
+        run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
         run: python live/test_echa.py
       - name: Test profile maker sharing and sanitization
