@@ -115,6 +115,36 @@ async def main():
         await two.send_json({'type':'sync'})
         latest=await take_type(two,'sync')
         assert len(latest['layers'])==1
+        # Bucket click is a single atomic, undoable, layer-aware operation.
+        await two.send_json({'type':'fill','point':[.3,.4],'layer':'base',
+                             'color':'#ff0088','opacity':.7,
+                             'tolerance':15,'reference':'all'})
+        bucket=await take_type(one,'end')
+        await take_type(two,'end')
+        assert bucket['stroke']['tool']=='fill'
+        assert bucket['stroke']['layer']=='base'
+        assert bucket['stroke']['reference']=='all'
+        assert bucket['stroke']['point']==[.3,.4]
+        assert len(ROOMS[code]['strokes'])==1
+        await two.send_json({'type':'fill','point':[.3,.4],'layer':'base',
+                             'color':'#00ff00','opacity':1,
+                             'tolerance':101,'reference':'all'})
+        err=await take_type(two,'error')
+        assert '許容値' in err['message']
+        await two.send_json({'type':'fill','point':[.3,.4],'layer':'base',
+                             'color':'#00ff00','opacity':1,
+                             'tolerance':10,'reference':'url'})
+        err=await take_type(two,'error')
+        assert '参照モード' in err['message']
+        await two.send_json({'type':'fill','point':[.3,.4],'layer':'base',
+                             'color':'#00ff00','opacity':1,
+                             'tolerance':15,'reference':'layer'})
+        err=await take_type(two,'error')
+        assert '連続' in err['message']
+        await two.send_json({'type':'undo'})
+        await take_type(one,'remove')
+        await take_type(two,'remove')
+        assert len(ROOMS[code]['strokes'])==0
         await two.close()
         await one.close()
     assert style_of({'color':'#ffaa22','width':2,'opacity':.2,'tool':'eraser'})['tool']=='eraser'
@@ -123,6 +153,6 @@ async def main():
         try:f()
         except ValueError:pass
         else:raise AssertionError('invalid drawing input accepted')
-    print('PASS: echa concurrent drawing, layer synchronization, visibility, opacity, moving, deletion, chat and host controls')
+    print('PASS: echa layers, flood fill events, reference validation, cooldown, undo, chat and host controls')
 
 asyncio.run(main())
