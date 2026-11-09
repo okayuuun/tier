@@ -2,7 +2,7 @@
 <html lang="ja">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#a967d5"><title>お絵描きチャット｜なかみくらべ。</title>
-<link rel="stylesheet" href="/echa.css?v=2"></head>
+<link rel="stylesheet" href="/echa.css?v=3"></head>
 <body>
 <header class="ec-header"><a href="/">♡ なかみくらべ。</a><strong>🎨 みんなの絵チャ</strong><div class="ec-row ec-header-nav"><a class="ec-header-link" href="/" target="_blank" rel="noopener">🎮 他のゲームを別タブで遊ぶ</a><a class="ec-header-link" href="/">ゲーム一覧へ戻る</a></div><div class="ec-status" id="ec-status">未接続</div></header>
 <main>
@@ -23,11 +23,19 @@
    <div class="ec-row"><a class="ec-return-link" href="/" title="部屋のURLはトップページからもう一度開けます">🎲 ゲーム一覧へ</a><button id="ec-copy">🔗 招待リンクをコピー</button><button id="ec-rejoin">↻ 再接続</button><button id="ec-fit">全体表示</button><button id="ec-export" class="ec-primary">🖼️ 全体をPNG保存</button><button id="ec-timelapse">🎞️ タイムラプス</button></div>
  </div>
  <div class="ec-tools">
-   <button data-tool="pen" class="ec-tool is-selected">✏️ ペン</button><button data-tool="eraser" class="ec-tool">🧽 消しゴム</button>
+   <button data-tool="pen" class="ec-tool is-selected">✏️ ペン</button><button data-tool="bucket" class="ec-tool">🪣 バケツ</button><button data-tool="eraser" class="ec-tool">🧽 消しゴム</button>
    <button data-tool="pan" class="ec-tool">✋ 移動</button>
    <label>色 <input type="color" id="ec-color" value="#563c72"></label>
    <label>太さ <input type="range" min="1" max="90" value="8" id="ec-width"><span id="ec-width-text">8</span></label>
    <label>透明度 <input type="range" min="5" max="100" value="100" id="ec-opacity"><span id="ec-opacity-text">100%</span></label>
+   <div class="ec-bucket-options" id="ec-bucket-options" hidden>
+     <label>色の許容値 <input id="ec-tolerance" type="range" min="0" max="100" step="1" value="15"><b id="ec-tolerance-text">15</b></label>
+     <label>塗りつぶしの境界 <select id="ec-reference">
+       <option value="all" selected>表示中の全レイヤーを参照</option>
+       <option value="layer">選択中のレイヤーのみ参照</option>
+     </select></label>
+     <span class="ec-small ec-bucket-help">線画を上のレイヤー、色を下のレイヤーにして「全レイヤー参照」を選ぶと、線を残して色を塗れます。塗る場所を1回タップしてください。</span>
+   </div>
    <button id="ec-undo">↶ 自分の線を戻す</button><button id="ec-clear" class="ec-danger" hidden>🗑️ 全消去</button>
  </div>
  <div class="ec-main">
@@ -48,7 +56,7 @@
      <section class="ec-layer-panel" aria-label="共有レイヤー管理"><div class="ec-layer-header"><h2>🗂️ 共有レイヤー <span id="ec-layer-count">1 / 8</span></h2><button id="ec-layer-add" type="button">＋ 追加</button></div>
        <p class="ec-small">レイヤーを選んで描くと、ほかの人の絵を消さずに重ねられます。名前・順番・表示・透明度は全員に反映されます。</p>
        <div id="ec-layers" class="ec-layer-list"></div><p class="ec-small" id="ec-layer-selected">選択中：レイヤー 1</p>
-       <p class="ec-small">削除は主催者のみ。消しゴムは選択中のレイヤーだけに作用します。</p>
+       <p class="ec-small">削除は主催者のみ。消しゴムとバケツは選択中のレイヤーだけを変更します。</p>
      </section>
      <details open><summary>👥 参加者</summary><div id="ec-members" class="ec-members"></div></details>
      <div class="ec-chat"><h2>💬 お絵描きチャット</h2><div id="ec-chat-log" class="ec-chat-log" aria-live="polite"></div>
@@ -68,6 +76,6 @@
   </div>
 </div>
 </main>
-<script src="/echa.js?v=2" defer></script>
+<script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=3" defer></script>
 </body>
 </html>
