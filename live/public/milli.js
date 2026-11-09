@@ -48,7 +48,27 @@ function selectChar(i){active=i;renderEdit()}
 function saveCurrent(){save();message('この端末に保存しました。','success')}
 function exportCurrent(){if(!current)return;download('millishira-set.json',JSON.stringify({kind:'nakami-millishira',project:current},null,2),'application/json')}
 function openImport(){document.getElementById('import-file').click()}
-async function importFile(ev){const file=ev.target.files?.[0];if(!file||file.size>800000)return alert('800KB以下のJSONを選んでください');try{const v=JSON.parse(await file.text()),p=v.project||v;if(!Array.isArray(p.characters)||!p.characters.length)throw new Error('キャラがありません');p.id=uid();p.published=[];projects.unshift(p);save();edit(0)}catch(e){alert('読み込み失敗：'+e.message)}}
+async function importFile(ev){
+ const file=ev.target.files?.[0];if(!file||file.size>800000)return alert('800KB以下のJSONを選んでください');
+ try{
+  const v=JSON.parse(await file.text()),raw=v.project||v;
+  if(!raw||!Array.isArray(raw.characters)||!raw.characters.length)throw new Error('キャラがありません');
+  const p=empty();p.title=String(raw.title||'').slice(0,85);p.series=String(raw.series||'').slice(0,85);
+  p.characters=raw.characters.slice(0,20).map((item,i)=>{
+    const c=item&&typeof item==='object'?item:{};
+    const image=String(c.image||'');
+    const acceptedImage=image.length<=110000&&(/^(data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/.test(image)||/^https:\\/\\/[^\\s<>"']{1,1000}$/.test(image));
+    const fields=(Array.isArray(c.fields)?c.fields:[]).slice(0,16).map(q=>{
+      q=q&&typeof q==='object'?q:{};
+      const type=['short','long','choice'].includes(q.type)?q.type:'short';
+      const opts=Array.isArray(q.options)?q.options.filter(x=>typeof x==='string').map(x=>x.slice(0,70).trim()).filter(Boolean).slice(0,12):[];
+      return {id:uid(),label:String(q.label||'質問').slice(0,90),type,options:type==='choice'?(opts.length>=2?opts:['はい','いいえ']):[]};
+    });
+    return {id:uid(),label:String(c.label||'キャラクター '+(i+1)).slice(0,70),image:acceptedImage?image:'',fields:fields.length?fields:blankFields()};
+  });
+  projects.unshift(p);save();edit(0);
+ }catch(e){alert('読み込み失敗：'+e.message)}
+}
 function validated(){if(!current?.title.trim()||current.title.trim().length<2)throw new Error('セット名を2文字以上で入力してください');const copy=JSON.parse(JSON.stringify(current));delete copy.published;delete copy.id;copy.characters.forEach((c,i)=>{if(!c.label.trim())throw new Error((i+1)+'人目のキャラ表示名がありません');if(!c.fields.length)throw new Error('質問がないキャラがあります');c.fields.forEach(q=>{if(!q.label.trim())throw new Error('空の質問文があります');if(q.type==='choice'&&q.options.length<2)throw new Error('選択肢は2個以上必要です')})});return copy}
 async function postJSON(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){let message=await r.text();throw new Error(message.slice(0,200))}return await r.json()}
 async function publish(){if(sending)return;try{const data=validated();sending=true;message('公開リンクを発行しています…');const result=await postJSON('/api/milli',data);current.published=current.published||[];current.published.unshift({id:result.id,key:result.ownerKey,created:Date.now()});save();renderEdit();message('共有リンクを発行しました！ 回答者用URLを友達に送ってください。','success')}catch(e){message(e.message||'公開できませんでした','error')}finally{sending=false}}
