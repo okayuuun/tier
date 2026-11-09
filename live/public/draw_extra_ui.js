@@ -26,7 +26,7 @@ function axPaint(){const p=room.drawextra,host=room.owner===me,ng=room.game==='a
   axPanel('絵を描いて提出しよう',head+edit+drawCanvasHTML()+'<div class="btns">'+axBtn('絵を提出','drawSendPicture("paint_submit")','gold')+'</div>');drawBind();return;
  }
  if(room.phase==='px_vote'){
-  const list=p.pictures.map((x,i)=>axEntry(x,i,x.id===me?'<small>自分の絵</small>':(ng?'<label class="ax-flag"><input type="checkbox" onchange="axReport('+JSON.stringify(x.id).replaceAll('"','&quot;')+',this.checked)" '+(axReports.has(x.id)?'checked':'')+'>この絵はNG要素を描いていると思う</label>':'')+(p.myVote?'<small>投票済み</small>':axBtn('この絵に投票','axVote('+JSON.stringify(x.id).replaceAll('"','&quot;')+')','gold')))).join('');
+  const list=p.pictures.map((x,i)=>axEntry(x,i,x.id===me?'<small>自分の絵</small>':(ng?'<label class="ax-flag"><input type="checkbox" onchange="axReport('+JSON.stringify(x.id).replaceAll('"','&quot;')+',this.checked)" '+(axReports.has(x.id)?'checked':'')+'>この絵はNG要素を描いていると思う</label>':'')+(p.myVote?'<small>投票済み</small>':axBtn('この絵に投票','axVote('+JSON.stringify(x.id)+')','gold')))).join('');
   return axPanel('お気に入りの作品に投票しよう',head+'<div class="dp-note">結果までは作者を伏せて表示します。'+(ng?'気になったNG違反にもチェックしてから投票してください。':'')+'</div><div class="dp-gallery">'+list+'</div><p class="small">投票：'+p.voteCount+' / '+room.active.length+'人</p>'+(host&&p.voteCount?axBtn('今の票で集計','send({type:"paint_force"})','alt'):''));}
 }
 function axBluffReview(){const p=room.drawextra,final=room.phase==='final',host=room.owner===me,rows=final?p.history:[p.last].filter(Boolean);
