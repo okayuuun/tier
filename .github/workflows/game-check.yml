@@ -31,6 +31,8 @@ jobs:
         run: python live/test_draw_extra.py
       - name: Test new art mixing, collaborative and reverse drawing modes
         run: python live/test_draw_mix.py
+      - name: Test invention and character-design competitions
+        run: python live/test_design_games.py
       - name: Import game modules
         run: |
           cd live
