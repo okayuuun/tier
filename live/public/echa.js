@@ -5,8 +5,59 @@ const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
+let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
+const paintScratch=new Map();
 const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
+function normalizeLayers(data){
+ if(!Array.isArray(data)||!data.length)return;
+ layers=data;
+ if(!layers.some(layer=>layer.id===selectedLayer))selectedLayer=layers[layers.length-1].id;
+ renderLayers()
+}
+function renderLayers(){
+ $('ec-layer-count').textContent=layers.length+' / '+maxLayers;
+ $('ec-layer-add').disabled=layers.length>=maxLayers||!connected();
+ $('ec-layer-selected').textContent='選択中：'+(layers.find(l=>l.id===selectedLayer)?.name||'なし');
+ $('ec-layers').innerHTML=[...layers].reverse().map((layer,reverseIndex)=>{
+  const idx=layers.length-1-reverseIndex;
+  return '<div class="ec-layer-row '+(selectedLayer===layer.id?'ec-layer-active':'')+'">'+
+  '<div class="ec-layer-main"><button type="button" class="ec-layer-pick" data-layer-do="select" data-layer-id="'+esc(layer.id)+'" aria-pressed="'+(selectedLayer===layer.id)+'">🎨 '+esc(layer.name)+'</button>'+
+  '<span class="ec-layer-z">#'+(idx+1)+'</span></div>'+
+  '<div class="ec-layer-controls"><button type="button" data-layer-do="visible" data-layer-id="'+esc(layer.id)+'" title="表示切り替え">'+(layer.visible?'👁':'🚫')+'</button>'+
+  '<button type="button" data-layer-do="up" data-layer-id="'+esc(layer.id)+'" title="前面へ" '+(idx===layers.length-1?'disabled':'')+'>↑</button>'+
+  '<button type="button" data-layer-do="down" data-layer-id="'+esc(layer.id)+'" title="背面へ" '+(idx===0?'disabled':'')+'>↓</button>'+
+  (owner&&layers.length>1?'<button type="button" class="ec-layer-delete" data-layer-do="remove" data-layer-id="'+esc(layer.id)+'" title="このレイヤーを削除">✕</button>':'')+'</div>'+
+  '<div class="ec-layer-details"><label>名前<input type="text" maxlength="40" data-layer-rename="'+esc(layer.id)+'" value="'+esc(layer.name)+'"></label>'+
+  '<label>不透明度 '+Math.round(layer.opacity*100)+'%<input type="range" min="0" max="100" value="'+Math.round(layer.opacity*100)+'" data-layer-opacity="'+esc(layer.id)+'"></label></div></div>'
+ }).join('');
+}
+$('ec-layer-add').addEventListener('click',()=>{
+ if(!connected()||layers.length>=maxLayers)return;
+ selectNewLayer=true;send({type:'layer_op',op:'add'})
+});
+$('ec-layers').addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-layer-do]');if(!btn)return;
+ const id=btn.dataset.layerId,op=btn.dataset.layerDo;
+ if(op==='select'){selectedLayer=id;renderLayers();return}
+ if(op==='remove'&&!confirm('このレイヤーと、その中の線をすべて削除しますか？'))return;
+ if(op==='visible'){
+  const layer=layers.find(x=>x.id===id);
+  if(layer)send({type:'layer_op',op:'visible',id,value:!layer.visible});
+ }else if(op==='up'||op==='down')send({type:'layer_op',op:'move',id,direction:op==='up'?1:-1});
+ else if(op==='remove')send({type:'layer_op',op:'remove',id})
+});
+$('ec-layers').addEventListener('change',ev=>{
+ const el=ev.target;
+ if(el.dataset.layerRename){
+  const id=el.dataset.layerRename,name=el.value.trim();
+  if(!name||name.length>40){alertUI('レイヤー名は1〜40文字にしてください');return}
+  send({type:'layer_op',op:'rename',id,name})
+ }else if(el.dataset.layerOpacity){
+  send({type:'layer_op',op:'opacity',id:el.dataset.layerOpacity,value:Number(el.value)/100})
+ }
+});
+
 let drawingScheduled=false,lastError='';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function alertUI(msg){$('ec-status').textContent=msg;lastError=msg}
@@ -78,6 +129,8 @@ function onMessage(d){
   strokes=Array.isArray(d.strokes)?d.strokes:[];
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
+  maxLayers=d.maxLayers||8;normalizeLayers(d.layers);
+  try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
   history.replaceState(null,'',location.pathname+'?room='+code);
@@ -94,7 +147,13 @@ function onMessage(d){
  }
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);redraw();updateCount();return}
  if(d.type==='clear'){strokes=[];pending.clear();redraw();schedulePending();updateCount();return}
- if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));redraw();schedulePending();updateCount()}
+ if(d.type==='layers'){
+  if(d.selected&&selectNewLayer)selectedLayer=d.selected;
+  selectNewLayer=false;
+  if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]))}
+  normalizeLayers(d.layers);redraw();return
+ }
+ if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));normalizeLayers(d.layers);redraw();schedulePending();updateCount()}
 }
 function renderMembers(){
  $('ec-members-count').textContent='・'+members.length+'人参加';
@@ -195,8 +254,10 @@ overlay.addEventListener('pointerdown',ev=>{
  overlay.setPointerCapture(ev.pointerId);
  activePointer={id:ev.pointerId,mode:panning?'pan':'draw',atX:ev.clientX,atY:ev.clientY};
  if(panning)return;
- const s={by:myId,color:currentColor(),width:currentWidth(),opacity:currentOpacity(),tool:tool==='eraser'?'eraser':'pen',points:[pt]};
- pending.set(myId,s);schedulePending();send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool})
+ const layer=layers.find(x=>x.id===selectedLayer);
+ if(!layer||!layer.visible){alertUI('描画するには表示中のレイヤーを選んでください');activePointer=null;return}
+ const s={by:myId,layer:selectedLayer,color:currentColor(),width:currentWidth(),opacity:currentOpacity(),tool:tool==='eraser'?'eraser':'pen',points:[pt]};
+ pending.set(myId,s);schedulePending();send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})
 });
 overlay.addEventListener('pointermove',ev=>{
  if(!activePointer||activePointer.id!==ev.pointerId)return;
@@ -296,6 +357,13 @@ $('ec-record').addEventListener('click',()=>{
 });
 window.addEventListener('resize',()=>{if($('ec-room').hidden===false)fit()});
 const prefill=new URLSearchParams(location.search).get('room');
-if(prefill&&/^[A-Z2-9]{6}$/.test(prefill.toUpperCase()))$('ec-code').value=prefill.toUpperCase();
+if(prefill&&/^[A-Z2-9]{6}$/.test(prefill.toUpperCase())){
+ $('ec-code').value=prefill.toUpperCase();
+ if(storedName()){
+  code=prefill.toUpperCase();
+  try{ownerKey=sessionStorage.getItem(roomKey())||''}catch(_){ownerKey=''}
+  connectRoom(storedName())
+ }
+}
 markTool()
 })();
