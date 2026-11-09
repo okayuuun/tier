@@ -41,6 +41,8 @@ jobs:
         run: python live/test_echa.py
       - name: Test profile maker sharing and sanitization
         run: node live/test_profile_maker.js
+      - name: Test echa client layer compositing and timelapse
+        run: node live/test_echa_client.js
       - name: Test multiplayer player count filters
         run: node live/test_game_filters.js
       - name: Import game modules
