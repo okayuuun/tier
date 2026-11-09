@@ -39,7 +39,7 @@ function renderArtMix(){let d=room.drawmix,p=room.phase,host=room.owner===me;
  mixPage('あなたのお題を描こう',top+'<div class="mx-secret">あなただけのお題 <b>'+esc(d.myPrompt)+'</b></div>'+mixPad()+mixBtn('絵を提出','mixSendPicture("mx_draw")','gold'));mixBind();return;}
  if(p==='mx_caption'){if(d.submitted)return mixPage('セリフ提出完了',top+'<div class="mx-note">✅ セリフを提出しました。'+d.submittedCount+'/'+d.needed+'人</div>');
  mixPage('なんにでも合いそうなセリフを書こう',top+'<div class="mx-note">セリフはあなた以外の誰かの絵と組み合わされます。</div><textarea class="field mx-textarea" id="mx-caption" maxlength="70" placeholder="たとえば：そんなはずじゃなかった！"></textarea>'+mixBtn('セリフを提出','mixInput("mx_caption","mx-caption",2)','gold'));return;}
- if(p==='mx_vote'){let cards='<div class="mx-gallery">'+d.combos.map((x,i)=>'<div class="mx-card"><b>組み合わせ '+(i+1)+'</b>'+mixArtwork(x.strokes)+'<p class="mx-quote">'+esc(x.caption)+'</p>'+(x.mine?'<small>自分が関わった作品には投票不可</small>':d.myVote?'<small>投票済み</small>':mixBtn('この作品に投票','send({type:"mx_vote",key:"'+x.key+'"})','gold'))+'</div>').join('')+'</div>';
+ if(p==='mx_vote'){let cards='<div class="mx-gallery">'+d.combos.map((x,i)=>'<div class="mx-card"><b>組み合わせ '+(i+1)+'</b>'+mixArtwork(x.strokes)+'<p class="mx-quote">'+esc(x.caption)+'</p>'+(x.mine?'<small>この作品には投票できません</small>':d.myVote?'<small>投票済み</small>':mixBtn('この作品に投票','send({type:"mx_vote",key:"'+x.key+'"})','gold'))+'</div>').join('')+'</div>';
  return mixPage('いちばん好きな組み合わせは？',top+cards+'<div class="mx-note">投票 '+d.votesCount+'/'+d.needed+'人</div>'+(host&&d.votesCount?mixBtn('今の票で集計','send({type:"mx_force"})','alt'):''));}
  return mixResult()}
 function renderArtCollab(){let d=room.drawmix,host=room.owner===me,turn=d.turn===me;
