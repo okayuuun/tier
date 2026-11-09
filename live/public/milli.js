@@ -57,7 +57,7 @@ async function importFile(ev){
   p.characters=raw.characters.slice(0,20).map((item,i)=>{
     const c=item&&typeof item==='object'?item:{};
     const image=String(c.image||'');
-    const acceptedImage=image.length<=110000&&(/^(data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/.test(image)||/^https:\\/\\/[^\\s<>"']{1,1000}$/.test(image));
+    const acceptedImage=image.length<=110000&&(/^(data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/.test(image)||/^https:\/\/[^\s<>"']{1,1000}$/.test(image));
     const fields=(Array.isArray(c.fields)?c.fields:[]).slice(0,16).map(q=>{
       q=q&&typeof q==='object'?q:{};
       const type=['short','long','choice'].includes(q.type)?q.type:'short';
