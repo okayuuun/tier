@@ -19,13 +19,14 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
     "propose": "たった今考えたプロポーズの言葉を君に捧ぐよ。", "soup": "ウミガメのスープ",
     "unique": "全員不一致", "wolf": "ワードウルフ",
     "senryu": "昼ドラ川柳", "tanka": "５７５７７（ゴーシチゴーシチシチ）", "booktitle": "横暴編集長",
+    "artguide": "こっそり絵の指示書", "drawrelay": "お絵描き伝言リレー",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
@@ -38,6 +39,9 @@ ACTION_LABELS = {
     "prop_pick":"プロポーズ審査", "soup_ask":"質問", "soup_solve":"真相を推理",
     "soup_reply":"質問に回答", "soup_resolve":"真相を公開",
     "unique_answer":"不一致の回答", "wolf_vote":"ワードウルフ投票",
+    "art_target":"絵の秘密のお題を設定", "art_hints":"絵のヒントを公開", "art_submit":"イラスト提出",
+    "art_pick":"イラストを採用", "art_force":"お絵描きの途中集計", "art_next":"次の出題者",
+    "relay_seed":"伝言のお題を作成", "relay_draw":"伝言の絵を提出", "relay_caption":"伝言を文章化", "relay_next":"伝言結果を表示",
     "word_format":"句の型を設定", "word_submit":"句・タイトルを提出", "word_show":"句を発表",
     "word_pick":"親が作品を採用", "word_vote":"編集会議で投票", "word_force":"途中集計", "word_next":"次のラウンド",
     "un_answer":"全員一致の回答", "un_next":"全員一致の次の問題", "un_redraw":"一致お題変更", "un_force":"一致ゲーム途中集計",
@@ -134,6 +138,15 @@ class MasterAdmin:
             p = room["party"]
             details = {"type": "party", "rounds": p.get("history", p.get("rounds", [])),
                        "round": p.get("round"), "rings": p.get("rings"), "lives": p.get("lives")}
+        elif room.get("draw"):
+            p=room["draw"]
+            if room.get("game")=="artguide":
+                rows=[{"round":r.get("round"),"topic":r.get("topic"),"target":r.get("target"),
+                       "winnerName":r.get("winnerName"),"participants":[x.get("name") for x in r.get("pictures",[])]}
+                      for r in p.get("history",[])]
+            else:
+                rows=[{"owner":owner,"steps":len(steps)} for owner,steps in p.get("chains",{}).items()]
+            details={"type":"drawing","rounds":rows,"round":p.get("round",p.get("stage"))}
         elif room.get("word"):
             w=room["word"]
             details={"type":"word","format":w.get("format"),"round":w.get("round"),"rounds":w.get("history",[])}
