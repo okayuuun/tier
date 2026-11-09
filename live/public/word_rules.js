@@ -2,7 +2,7 @@
 /* The shared rules.js illustrates these steps using original, generated SVG diagrams. */
 Object.assign(HOWTO,{
  senryu:{title:'昼ドラ川柳',icon:'🌹',tagline:'恋と秘密の川柳を作ろう',slides:[
-  {title:'好きな句の型を選ぶ',body:'基本は5・7・5。5・7・5・7・7や5・5・7・7、自由な型でも遊べます。',tip:'音数は目安です。ふざけた字余りも歓迎！',picture:{type:'choices',labels:['5・7・5','5・7・5・7・7','5・5・7・7','自由な型'],selected:2,tag:'ホストが型を選びます'}},
+  {title:'配られたカードを自由に並べる',body:'全員に5音・7音の句カードを配ります。それぞれ好きなカードを2〜12枚選び、自由な順番で作品を作ります。',tip:'音数は目安です。ふざけた字余りも歓迎！',picture:{type:'choices',labels:['5・7・5','5・7・5・7・7','5・5・7・7','自由な型'],selected:2,tag:'形式は各プレイヤーが自由に決める'}},
   {title:'手札の言葉を組み立てる',body:'親以外が5音・7音の言葉を各句に選びます。自分の文章を自由入力することもできます。',tip:'句をタップして選ぶだけ。',picture:{type:'words',tag:'言葉をつなげて一句を作る'}},
   {title:'匿名で作品を発表する',body:'作品がそろったら親が発表します。誰の作品か分からないまま選べます。',tip:'声に出して読むと昼ドラらしさが増します。',picture:{type:'judge',tag:'作者はまだ秘密'}},
   {title:'親が一番の句を選ぶ',body:'親が最も好きだった作品を選び、作者に1点。親を交代して合計点を競います。',tip:'採点基準は面白さでもドラマっぽさでも自由です。',picture:{type:'progress',tag:'親を交代して遊びます'}}
