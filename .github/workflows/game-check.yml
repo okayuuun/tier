@@ -27,6 +27,8 @@ jobs:
         run: python live/test_word_games.py
       - name: Test secret drawing and picture telephone
         run: python live/test_draw_party.py
+      - name: Test new art contest, NG drawing and title bluff
+        run: python live/test_draw_extra.py
       - name: Import game modules
         run: |
           cd live
