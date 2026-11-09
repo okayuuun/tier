@@ -71,11 +71,13 @@ function currentWidth(){return Number($('ec-width').value)}
 function currentOpacity(){return Number($('ec-opacity').value)/100}
 function markTool(){
  document.querySelectorAll('[data-tool]').forEach(el=>el.classList.toggle('is-selected',el.dataset.tool===tool));
- workspace.classList.toggle('is-pan',tool==='pan')
+ workspace.classList.toggle('is-pan',tool==='pan');
+ $('ec-bucket-options').hidden=tool!=='bucket'
 }
 document.querySelectorAll('[data-tool]').forEach(el=>el.addEventListener('click',()=>{tool=el.dataset.tool;markTool()}));
 $('ec-width').addEventListener('input',()=>{$('ec-width-text').textContent=currentWidth()});
 $('ec-opacity').addEventListener('input',()=>{$('ec-opacity-text').textContent=Math.round(currentOpacity()*100)+'%'});
+$('ec-tolerance').addEventListener('input',()=>{$('ec-tolerance-text').textContent=$('ec-tolerance').value});
 function roomKey(){return 'nk_echa_owner_'+code}
 function roomLink(){return location.origin+'/echa?room='+encodeURIComponent(code)}
 async function copyInvite(){
@@ -149,6 +151,7 @@ function onMessage(d){
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
  if(d.type==='clear'){strokes=[];pending.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
  if(d.type==='layers'){
+   resetPaintCache(); // Rebuild fill boundaries after shared layer order/visibility changes.
   if(d.selected&&selectNewLayer)selectedLayer=d.selected;
   selectNewLayer=false;
   if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]));resetPaintCache()}
@@ -294,6 +297,15 @@ overlay.addEventListener('pointerdown',ev=>{
  const panning=tool==='pan'||spaceHeld||ev.button===1;
  const pt=coords(ev);
  if(!pt&&!panning)return;
+ if(!panning&&tool==='bucket'){
+  const layer=layers.find(x=>x.id===selectedLayer);
+  if(!layer||!layer.visible){alertUI('表示中のレイヤーを選んでください');return}
+  send({type:'fill',point:pt,layer:selectedLayer,color:currentColor(),
+   opacity:currentOpacity(),tolerance:Number($('ec-tolerance').value),
+   reference:$('ec-reference').value});
+  alertUI('🪣 塗りつぶしを反映しています…');
+  return
+ }
  overlay.setPointerCapture(ev.pointerId);
  activePointer={id:ev.pointerId,mode:panning?'pan':'draw',atX:ev.clientX,atY:ev.clientY};
  if(panning)return;
