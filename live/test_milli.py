@@ -44,10 +44,56 @@ async def main():
   r=await client.post('/api/milli/'+token+'/submit',json={'name':'不正',
            'answers':{'char001':{'q001':'hello','q002':'禁止された選択肢'}}})
   assert r.status==400
+  # New: canonical facts must never leak during guessing, and random questions accept subsets.
+  secret={'title':'ランダムで出題','series':'秘密の作品','hideSeries':True,'randomCount':1,'characters':[
+    {'id':'alpha01','label':'キャラA','truthNote':'実は主人公','image':'','fields':[{'id':'qa001','label':'性格','type':'long','options':[],'truth':'慎重'}]},
+    {'id':'beta002','label':'キャラB','truthNote':'黒幕','image':'','fields':[{'id':'qb002','label':'生死','type':'choice','options':['生存','死亡'],'truth':'死亡'}]}]}
+  r=await client.post('/api/milli',json=secret)
+  assert r.status==200,await r.text()
+  pub=await r.json()
+  fid,owner=pub['id'],pub['ownerKey']
+  r=await client.get('/api/milli/'+fid)
+  exposed=(await r.json())['spec']
+  assert len(exposed['characters'])==1 and exposed['series']==''
+  assert 'truthNote' not in json.dumps(exposed,ensure_ascii=False)
+  assert 'truth' not in json.dumps(exposed,ensure_ascii=False)
+  receipts={}
+  for name,consent in [('公開A',True),('公開B',True),('非公開C',False)]:
+   view=(await (await client.get('/api/milli/'+fid)).json())['spec']
+   ch=view['characters'][0]
+   answer='生存' if ch['id']=='beta002' else '優しい'
+   vals={ch['id']:{ch['fields'][0]['id']:answer}}
+   rr=await client.post('/api/milli/'+fid+'/submit',json={'name':name,'showcase':consent,'answers':vals})
+   assert rr.status==200,await rr.text()
+   receipts[name]=(await rr.json())['voterToken']
+  r=await client.get('/api/milli/'+fid+'/gallery')
+  assert r.status==403
+  r=await client.post('/api/milli/'+fid+'/gallery-toggle',json={'ownerKey':'invalid','enabled':True})
+  assert r.status==403
+  r=await client.post('/api/milli/'+fid+'/gallery-toggle',json={'ownerKey':owner,'enabled':True})
+  assert r.status==200,await r.text()
+  gallery=await (await client.get('/api/milli/'+fid+'/gallery')).json()
+  assert len(gallery['responses'])==2
+  assert gallery['spec']['characters'][0]['truthNote']=='実は主人公'
+  assert {x['name'] for x in gallery['responses']}=={'公開A','公開B'}
+  target={x['name']:x['id'] for x in gallery['responses']}
+  r=await client.post('/api/milli/'+fid+'/vote',json={'voterToken':receipts['公開A'],'responseId':target['公開A']})
+  assert r.status==400
+  r=await client.post('/api/milli/'+fid+'/vote',json={'voterToken':receipts['公開A'],'responseId':target['公開B']})
+  assert r.status==200,await r.text()
+  gallery=await (await client.get('/api/milli/'+fid+'/gallery')).json()
+  assert next(x for x in gallery['responses'] if x['name']=='公開B')['votes']==1
+  r=await client.post('/api/milli/'+fid+'/vote',json={'voterToken':'invalid_invalid_invalid','responseId':target['公開B']})
+  assert r.status==403
+  owner_data=await (await client.post('/api/milli/'+fid+'/manage',json={'ownerKey':owner})).json()
+  assert len(owner_data['responses'])==3 and owner_data['spec']['hideSeries'] is True
+  r=await client.post('/api/milli/'+fid+'/gallery-toggle',json={'ownerKey':owner,'enabled':False})
+  assert r.status==200
+  assert (await client.get('/api/milli/'+fid+'/gallery')).status==403
  custom=strokes([{'c':'#12abEF','a':0.35,'layer':2,'w':7,'p':[[0.1,0.1],[0.4,0.4]]}])
  assert custom[0]['a']==.35 and custom[0]['layer']==2 and custom[0]['c']=='#12abef'
  try:strokes([{'c':'red','a':1,'layer':0,'w':5,'p':[[.2,.2]]}])
  except ValueError:pass
  else:raise AssertionError('unsafe color accepted')
- print('PASS: millishira author privacy, answers, master audit, custom palette/layers/alpha')
+ print('PASS: millishira random, spoiler privacy, consented gallery, voting, author access and drawing validation')
 asyncio.run(main())
