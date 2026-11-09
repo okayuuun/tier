@@ -119,9 +119,9 @@ async function toggleGallery(){
   resultData.galleryEnabled=d.galleryEnabled;renderResults()
  }catch(e){alert('展示会の公開設定を変更できませんでした：'+e.message)}
 }
-let galleryData=null,galleryId='';
+let galleryData=null,galleryId='',galleryCharacter=0,gallerySort='popular',galleryPage=0,gallerySearch='';
 async function loadGallery(id){
- galleryId=id;mode='gallery';
+ if(galleryId!==id){galleryCharacter=0;gallerySort='popular';galleryPage=0;gallerySearch=''}galleryId=id;mode='gallery';
  root.innerHTML=card('展示会を読み込んでいます','公開された回答を確認します…');
  try{
   const r=await fetch('/api/milli/'+encodeURIComponent(id)+'/gallery',{cache:'no-store'});
@@ -133,17 +133,43 @@ async function loadGallery(id){
 }
 function renderGallery(){
  if(!galleryData)return;
- const spec=galleryData.spec,entries=galleryData.responses;
- root.innerHTML=`<div class="hero"><span class="pill">MILLISHIRA / REVEAL & GALLERY</span><h1>🎭 ミリしら答え合わせ</h1><p>${E(spec.title)} ／ ${E(spec.series)}　公開同意済み：${entries.length}件</p></div>
- ${card('本当の設定とみんなの想像',spec.characters.map(c=>`<details class="question"><summary><b>${E(c.label)}</b></summary>
- ${c.image?`<img class="smallimg" src="${E(c.image)}" alt="">`:''}
- ${c.truthNote?`<p class="milli-truth">${E(c.truthNote)}</p>`:''}
- ${c.fields.map(f=>`<div class="milli-compare"><b>${E(f.label)}</b><p class="milli-truth">本当の答え：${E(f.truth||'（作者の入力なし）')}</p>
- ${entries.filter(r=>r.answers?.[c.id]).map(r=>`<p><strong>${E(r.name)}：</strong> ${E(r.answers?.[c.id]?.[f.id]||'（未回答）')}</p>`).join('')||'<p class="muted">公開された回答はまだありません。</p>'}</div>`).join('')}
- </details>`).join(''))}
- ${card('一番面白かった回答に投票',entries.length?entries.map(r=>`<div class="milli-vote"><b>${E(r.name)} さん</b><span>${r.votes}票</span>${btn('この人に投票',`vote(${r.id})`,'sub')}</div>`).join('')+'<p class="muted">回答済みの人が1セットにつき1票。投票の変更はできますが、自分には投票できません。</p>':'展示への掲載に同意した回答はまだありません。')}
- ${card('共有・戻る',`<div class="bar">${btn('展示会URLをコピー','copyGallery()','sub')}<a class="btn outline" href="/milli">ミリしらのトップへ</a></div>`)}`
+ const spec=galleryData.spec, entries=galleryData.responses||[];
+ const characters=spec.characters||[];
+ const index=Math.min(galleryCharacter,Math.max(0,characters.length-1));
+ const character=characters[index];
+ if(!character){root.innerHTML=card('展示会','表示できるキャラクターがありません。');return}
+ const all=entries.filter(r=>r.answers?.[character.id]);
+ const needle=gallerySearch.trim().toLocaleLowerCase('ja-JP');
+ const filtered=all.filter(r=>!needle || r.name.toLocaleLowerCase('ja-JP').includes(needle) || character.fields.some(f=>String(r.answers?.[character.id]?.[f.id]||'').toLocaleLowerCase('ja-JP').includes(needle)));
+ filtered.sort((a,b)=>gallerySort==='recent'?b.id-a.id:(b.votes-a.votes || b.id-a.id));
+ const pages=Math.max(1,Math.ceil(filtered.length/8));
+ galleryPage=Math.min(galleryPage,pages-1);
+ const visible=filtered.slice(galleryPage*8,(galleryPage+1)*8);
+ const voted=entries.reduce((sum,r)=>sum+(r.votes||0),0);
+ let canVote=false;
+ try{canVote=!!localStorage.getItem('nakami_milli_voter_'+galleryId)}catch(_){}
+ const tabs=characters.map((c,i)=>`<button type="button" class="milli-char-tab ${i===index?'is-active':''}" aria-pressed="${i===index}" onclick="Milli.setGalleryCharacter(${i})">${c.image?`<img src="${E(c.image)}" alt="">`:''}<span>${E(c.label)}</span><small>${entries.filter(r=>r.answers?.[c.id]).length}件</small></button>`).join('');
+ const official=`<div class="milli-reveal-grid"><div class="milli-reveal-image">${character.image?`<img src="${E(character.image)}" alt="${E(character.label)}">`:'<div class="noimg">画像なし</div>'}</div><div><h2>${E(character.label)}</h2><p class="milli-reveal-kicker">公式設定・答え合わせ</p>${character.truthNote?`<p class="milli-reveal-note">${E(character.truthNote)}</p>`:'<p class="muted">このキャラクターの設定メモは未登録です。</p>'}</div></div>`;
+ const answers=character.fields.map((f,i)=>`<details class="milli-answer-item" ${i===0?'open':''}><summary><span class="milli-qnumber">Q${i+1}</span>${E(f.label)}</summary><p class="milli-official">${E(f.truth||'（正解は登録されていません）')}</p><p class="muted">下の回答カードから、友達が考えた設定も確認できます。</p></details>`).join('');
+ const choiceCards=visible.map((r,ix)=>{
+   const first=character.fields.map(f=>r.answers?.[character.id]?.[f.id]).find(x=>String(x||'').trim());
+   return `<article class="milli-gallery-entry"><div class="milli-entry-head"><div class="milli-rank">${galleryPage*8+ix+1}</div><div><b>${E(r.name)} さん</b><p class="muted">${r.votes||0}票</p></div><button type="button" class="btn ${canVote?'gold':'sub'}" ${canVote?'':'disabled title="回答後に投票できます"'} onclick="Milli.vote(${r.id})">♡ この回答に投票</button></div><p class="milli-entry-excerpt">${E(String(first||'（まだ内容がありません）').slice(0,115))}</p><details class="milli-entry-details"><summary>すべての回答を見る</summary>${character.fields.map(f=>`<div><b>${E(f.label)}</b><p>${E(r.answers?.[character.id]?.[f.id]||'（未回答）')}</p></div>`).join('')}</details></article>`
+ }).join('');
+ root.innerHTML=`<section class="milli-gallery-hero"><span class="pill">MILLISHIRA / GALLERY</span><h1>🎭 みんなのミリしら展示会</h1><p>${E(spec.title)} ／ ${E(spec.series)}</p><p>みんなが想像した設定と本当の姿を見比べよう。</p><div class="milli-gallery-stats"><div><strong>${characters.length}</strong><span>キャラクター</span></div><div><strong>${entries.length}</strong><span>公開された回答</span></div><div><strong>${voted}</strong><span>投票数</span></div></div></section>
+ ${card('キャラクターを選ぶ',`<div class="milli-character-tabs">${tabs}</div>`)}
+ ${card('本当の設定を見る',official+'<div class="milli-answer-list">'+answers+'</div>')}
+ ${card('みんなの回答を比べる',`<p class="muted">公開に同意した回答だけが表示されます。${canVote?'回答した人は面白かった回答を選んで投票できます。':'投票は回答を送信したブラウザから行えます。'}</p>
+ <div class="milli-gallery-toolbar"><label>並べ替え <select onchange="Milli.setGallerySort(this.value)"><option value="popular" ${gallerySort==='popular'?'selected':''}>人気順（得票順）</option><option value="recent" ${gallerySort==='recent'?'selected':''}>新しい順</option></select></label><div class="milli-gallery-search"><input id="milli-gallery-search" class="field" placeholder="名前・回答を検索" value="${E(gallerySearch)}" onkeydown="if(event.key==='Enter'){event.preventDefault();Milli.applyGallerySearch()}"><button type="button" class="btn sub" onclick="Milli.applyGallerySearch()">検索</button>${gallerySearch?btn('解除','clearGallerySearch()','outline'):''}</div></div>
+ <p class="milli-count">${filtered.length}件の回答（このキャラには${all.length}件）</p><div class="milli-gallery-list">${choiceCards||'<p class="muted">条件に合う回答はまだありません。</p>'}</div>
+ <div class="milli-gallery-pagination"><button class="btn sub" type="button" onclick="Milli.galleryTurnPage(-1)" ${galleryPage===0?'disabled':''}>← 前へ</button><span>${galleryPage+1} / ${pages} ページ</span><button class="btn sub" type="button" onclick="Milli.galleryTurnPage(1)" ${galleryPage===pages-1?'disabled':''}>次へ →</button></div>
+ <p class="muted">各セット1票まで投票でき、自分の回答には投票できません。公開設定は作者が管理します。</p>`)}
+ ${card('展示会を共有',`<div class="bar">${btn('URLをコピー','copyGallery()','sub')}<a class="btn outline" href="/milli">ミリしらのトップへ</a></div>`)}`
 }
+function setGalleryCharacter(index){galleryCharacter=Math.max(0,Math.min((galleryData?.spec.characters.length||1)-1,index));galleryPage=0;gallerySearch='';renderGallery()}
+function setGallerySort(value){gallerySort=value==='recent'?'recent':'popular';galleryPage=0;renderGallery()}
+function applyGallerySearch(){gallerySearch=document.getElementById('milli-gallery-search')?.value||'';galleryPage=0;renderGallery()}
+function clearGallerySearch(){gallerySearch='';galleryPage=0;renderGallery()}
+function galleryTurnPage(delta){galleryPage=Math.max(0,galleryPage+delta);renderGallery();document.querySelector('.milli-gallery-toolbar')?.scrollIntoView({block:'start',behavior:'smooth'})}
 async function vote(responseId){
  const token=localStorage.getItem('nakami_milli_voter_'+galleryId)||'';
  if(!token)return alert('回答を送信したブラウザから投票してください');
@@ -161,5 +187,5 @@ function exportCSV(){const d=resultData,s=d.spec;const headers=['名前','回答
 function download(name,text,type){const blob=new Blob([text],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
 function route(){const h=decodeURIComponent(location.hash.slice(1));if(h.startsWith('play:'))return loadPlay(h.slice(5));if(h.startsWith('gallery:'))return loadGallery(h.slice(8));if(h.startsWith('results:')){const parts=h.split(':');if(parts.length===3)return loadResults(parts[1],parts[2])}home()}
 window.addEventListener('hashchange',route);route();
-return{home,create,edit,remove,update,changeChar,updateField,updateOptions,addChar,cloneChar,removeChar,addField,removeField,moveField,addLifeField,copyQuestions,moveChar,setURL,removeImage,imageUpload,selectChar,saveCurrent,exportCurrent,openImport,importFile,publish,copyLink,goResults,updateAnswer,setShowcase,prevAnswer,nextAnswer,submit,copyMyAnswer,replay,refreshResults,exportResults,exportCSV,toggleGallery,loadGallery,renderGallery,vote,copyGallery};
+return{home,create,edit,remove,update,changeChar,updateField,updateOptions,addChar,cloneChar,removeChar,addField,removeField,moveField,addLifeField,copyQuestions,moveChar,setURL,removeImage,imageUpload,selectChar,saveCurrent,exportCurrent,openImport,importFile,publish,copyLink,goResults,updateAnswer,setShowcase,prevAnswer,nextAnswer,submit,copyMyAnswer,replay,refreshResults,exportResults,exportCSV,toggleGallery,loadGallery,renderGallery,vote,copyGallery,setGalleryCharacter,setGallerySort,applyGallerySearch,clearGallerySearch,galleryTurnPage};
 })();
