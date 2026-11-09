@@ -182,7 +182,7 @@ class MilliService:
         try: key=(await request.json()).get('ownerKey','')
         except (ValueError,TypeError,json.JSONDecodeError):raise web.HTTPBadRequest(text='管理情報が不正です')
         self.require_owner(row,key)
-        result=self.db.execute('SELECT id,created,player,answers FROM milli_responses WHERE form_id=? ORDER BY created DESC LIMIT 150',(request.match_info['id'],)).fetchall()
+        result=self.db.execute('SELECT id,created,player,answers,showcase FROM milli_responses WHERE form_id=? ORDER BY created DESC LIMIT 150',(request.match_info['id'],)).fetchall()
         return web.json_response({'spec':json.loads(row['spec']),
                                   'galleryEnabled':bool(row['gallery_enabled']),
                                   'responses':[{'id':r['id'],'created':r['created'],'name':r['player'],
