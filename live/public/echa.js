@@ -32,6 +32,7 @@ async function copyInvite(){
  catch(_){prompt('招待URLをコピーしてください',url)}
 }
 $('ec-copy').addEventListener('click',copyInvite);
+$('ec-rejoin').addEventListener('click',()=>{if(code)connectRoom($('ec-name').value.trim()||storedName()||'ゲスト')});
 async function createRoom(){
  const name=$('ec-name').value.trim();
  if(!name){$('ec-join-error').textContent='ニックネームを入力してください';return}
@@ -60,10 +61,11 @@ function connectRoom(name){
  alertUI('接続しています…');
  const proto=location.protocol==='https:'?'wss:':'ws:';
  ws=new WebSocket(proto+'//'+location.host+'/api/echa/ws');
- ws.onopen=()=>send({type:'join',code,name,ownerKey});
- ws.onmessage=ev=>{try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e)}};
- ws.onclose=()=>alertUI('接続が切れました。再参加すると最新の絵を読み込めます');
- ws.onerror=()=>alertUI('ネットワークエラーが発生しました');
+ const socket=ws;
+ socket.onopen=()=>{if(ws===socket)send({type:'join',code,name,ownerKey})};
+ socket.onmessage=ev=>{if(ws!==socket)return;try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e)}};
+ socket.onclose=()=>{if(ws!==socket)return;alertUI('接続が切れました。再接続ボタンでキャンバスを同期できます')};
+ socket.onerror=()=>{if(ws===socket)alertUI('ネットワークエラーが発生しました')};
 }
 function onMessage(d){
  if(d.type==='error'){
@@ -259,7 +261,7 @@ function playbackFrame(now){
 }
 function play(){
  if(!strokes.length)return alertUI('まず絵を描いてください');
- if(tlPlaying){stopPlayback();return}
+ if(tlPlaying){stopPlayback();if(recorder&&recorder.state==='recording')recorder.stop();return}
  if(tlIndex>=strokes.length){playbackReset();tlIndex=0}
  tlPlaying=true;tlLast=performance.now();tlRate=Math.max(4,strokes.length/40);
  $('ec-timeline-play').textContent='⏸ 一時停止';
