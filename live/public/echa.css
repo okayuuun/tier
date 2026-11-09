@@ -28,3 +28,14 @@
 #ec-layer-selected{font-weight:900;color:#6c398a;margin:12px 0 4px}
 @media(max-width:1100px){.ec-header-nav{order:3;width:100%;justify-content:center}.ec-header{flex-wrap:wrap}.ec-side{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ec-side .ec-layer-panel{grid-column:1 / -1}.ec-layer-list{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}}
 @media(max-width:700px){.ec-side{grid-template-columns:1fr}.ec-layer-list{grid-template-columns:1fr}.ec-header-link{flex:1;text-align:center}.ec-header-nav{margin-left:0}.ec-header .ec-status{font-size:10px}}
+
+
+/* Bucket-filling options are visible only when the 🪣 tool is selected. */
+.ec-bucket-options{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-basis:100%;
+  background:linear-gradient(110deg,#f1e5ff,#fff6e8);border:1px solid #d5b8e8;border-radius:13px;padding:13px}
+.ec-bucket-options[hidden]{display:none!important}
+.ec-bucket-options label{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;font-weight:900;color:#684287}
+.ec-bucket-options input[type=range]{accent-color:#8052ad;width:120px}
+.ec-bucket-options select{font-size:12px;max-width:100%;border-radius:9px;padding:8px 11px;background:#fff;color:#50395c;border:1px solid #bea2d9}
+.ec-bucket-help{display:block;flex:1 1 280px;font-weight:750;color:#755978!important}
+@media(max-width:650px){.ec-bucket-options{gap:10px}.ec-bucket-options label{flex:1 1 200px}.ec-bucket-options input[type=range]{flex:1}.ec-bucket-options select{width:100%}}
