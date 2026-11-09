@@ -11,7 +11,7 @@ const GAMES=Object.fromEntries(Object.entries(titles).map(([k,title])=>[k,{title
 const app={innerHTML:''};
 const ctx={app,GAMES,me:'p0',console,Math,JSON,
  document:{getElementById(){return {value:'テスト'}}},
- error:m=>{throw Error(m)},send:()=>{},panel:(x,y,z)=>z,roomBar:()=>'ROOM',
+ error:m=>{throw Error(m)},send:()=>{},panel:(x,y,z)=>x+y+z,roomBar:()=>'ROOM',
  action:(name,handler)=>'<button>'+name+'</button>',
  esc:s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;'),
  room:null
