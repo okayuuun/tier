@@ -208,6 +208,34 @@ function resetPaintCache(){layerPaintCache.clear()}
    is composited onto a temporary copy of that one layer, never on top of the
    whole finished picture. Layer erasers therefore cannot damage other layers.
    Each new stroke is rasterized once at the relevant output resolution. */
+function paintBucket(entry,targetCanvas,fill,w,h){
+ const layerContext=targetCanvas.getContext('2d');
+ const ref=fill.reference==='layer'?targetCanvas:sceneScratch(w,h);
+ if(fill.reference!=='layer'){
+  const rc=ref.getContext('2d');
+  rc.save();rc.setTransform(1,0,0,1,0,0);rc.globalAlpha=1;
+  rc.globalCompositeOperation='source-over';
+  rc.clearRect(0,0,w,h);
+  rc.fillStyle='#ffffff';rc.fillRect(0,0,w,h);
+  // Sample the other layers as boundaries but paint ONLY on the chosen layer.
+  for(const layer of layers){
+   if(!layer.visible||layer.opacity<=0)continue;
+   const canvas=entry.images.get(layer.id);
+   if(!canvas)continue;
+   rc.globalAlpha=layer.opacity;
+   rc.drawImage(canvas,0,0)
+  }
+  rc.restore()
+ }
+ const referenceImage=ref.getContext('2d').getImageData(0,0,w,h);
+ const targetImage=layerContext.getImageData(0,0,w,h);
+ const x=Math.max(0,Math.min(w-1,Math.floor(fill.point[0]*w)));
+ const y=Math.max(0,Math.min(h-1,Math.floor(fill.point[1]*h)));
+ ECFill.fill(referenceImage,targetImage,x,y,fill.color,fill.opacity,fill.tolerance);
+ layerContext.putImageData(targetImage,0,0)
+}
+/* Cache completed strokes per layer, and replay bucket operations in order.
+   Boundaries include only drawings that were present before the bucket click. */
 function renderedLayers(w,h,count){
  const key=w+'x'+h;
  let entry=layerPaintCache.get(key);
@@ -219,7 +247,13 @@ function renderedLayers(w,h,count){
   if(!layers.some(x=>x.id===id))continue;
   let c=entry.images.get(id);
   if(!c){c=document.createElement('canvas');c.width=w;c.height=h;entry.images.set(id,c)}
-  const lc=c.getContext('2d');lc.save();lc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);stroke(lc,s);lc.restore()
+  if(s.tool==='fill'){
+   paintBucket(entry,c,s,w,h);
+  }else{
+   const lc=c.getContext('2d');
+   lc.save();lc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);
+   stroke(lc,s);lc.restore()
+  }
  }
  entry.count=count;
  return entry.images
