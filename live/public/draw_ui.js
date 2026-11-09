@@ -14,7 +14,7 @@ function drawBind(){const el=document.getElementById('dp-canvas');if(!el)return;
  let down=false;const pt=e=>{const r=el.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))].map(x=>+x.toFixed(4))};
  el.addEventListener('pointerdown',e=>{e.preventDefault();if(d.tool==='picker'){NKMBrush.interact(d,ctx,pt(e));return}if(d.tool==='eraser'){down=true;try{el.setPointerCapture(e.pointerId)}catch(_){}NKMBrush.interact(d,ctx,pt(e));return}if(d.strokes.length>=90)return error('線の本数は90本までです');down=true;try{el.setPointerCapture(e.pointerId)}catch(_){}d.strokes.push(NKMBrush.newStroke(d,pt(e)));paint()});
  el.addEventListener('pointermove',e=>{if(!down)return;e.preventDefault();if(d.tool==='eraser'){NKMBrush.interact(d,ctx,pt(e));return}const s=d.strokes.at(-1),x=pt(e);if(!s||s.p.length>=90||d.strokes.reduce((a,v)=>a+v.p.length,0)>=2500)return;const last=s.p.at(-1);if(Math.abs(x[0]-last[0])+Math.abs(x[1]-last[1])>.003){s.p.push(x);paint()}});
- for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,()=>{down=false});paint()}
+ for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,()=>{down=false});paint();NKMBrush.bindPinch(el,d,()=>{down=false})}
 function drawSetColor(c){if(drawColors.includes(c)){drawData().color=c;render()}}
 function drawUndo(){NKMBrush.undo(drawData());render()}
 function drawClear(){if(drawData().strokes.length&&!confirm('描いた絵を全部消しますか？'))return;drawData().strokes=[];render()}

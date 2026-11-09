@@ -215,6 +215,7 @@ function onMessage(d){
  if(d.type==='chat'){messages.push(d.item);messages=messages.slice(-65);renderChat();return}
  if(d.type==='begin'){pending.set(d.stroke.by,d.stroke);schedulePending();return}
  if(d.type==='points'){const s=pending.get(d.by);if(s){s.points.push(...d.points);schedulePending()}return}
+ if(d.type==='cancel'){pending.delete(d.by);schedulePending();return}
  if(d.type==='end'){
   strokes.push(d.stroke);pending.delete(d.stroke.by);
   redraw();schedulePending();updateCount();return
@@ -375,7 +376,61 @@ function zoomAt(factor,clientX,clientY){
 $('ec-fit').addEventListener('click',fit);
 $('ec-zoom-in').addEventListener('click',()=>zoomAt(1.3));
 $('ec-zoom-out').addEventListener('click',()=>zoomAt(1/1.3));
+
 workspace.addEventListener('wheel',ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1.12:1/1.12,ev.clientX,ev.clientY)},{passive:false});
+/* On mobile, two touch pointers pan/zoom the whole board. A pinch discards
+   the current brush stroke so there are no unwanted marks on the canvas. */
+const touchPoints=new Map();
+let pinch=null,pinchUsed=false;
+function pinchInfo(){
+ const [a,b]=[...touchPoints.values()];
+ if(!a||!b)return null;
+ return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,
+  distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))}
+}
+workspace.addEventListener('pointerdown',ev=>{
+ if(ev.pointerType!=='touch')return;
+ touchPoints.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+ if(touchPoints.size===2){
+  if(activePointer?.mode==='draw'){
+   if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
+   sendQueue.length=0;
+   pending.delete(myId);
+   send({type:'cancel'});
+   schedulePending()
+  }
+  activePointer=null;pinchUsed=true;
+  const pos=pinchInfo(),rect=workspace.getBoundingClientRect();
+  pinch={distance:pos.distance,zoom:view.zoom,
+    anchorX:(pos.x-rect.left-view.x)/view.zoom,
+    anchorY:(pos.y-rect.top-view.y)/view.zoom};
+  try{workspace.setPointerCapture(ev.pointerId)}catch(_){}
+  ev.preventDefault()
+ }
+},true);
+workspace.addEventListener('pointermove',ev=>{
+ if(ev.pointerType!=='touch'||!touchPoints.has(ev.pointerId))return;
+ touchPoints.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+ if(pinch&&touchPoints.size>=2){
+  const pos=pinchInfo(),rect=workspace.getBoundingClientRect();
+  view.zoom=Math.max(.08,Math.min(3.2,pinch.zoom*pos.distance/pinch.distance));
+  view.x=pos.x-rect.left-pinch.anchorX*view.zoom;
+  view.y=pos.y-rect.top-pinch.anchorY*view.zoom;
+  transform();ev.preventDefault()
+ }
+},true);
+function liftTouch(ev){
+ if(ev.pointerType!=='touch')return;
+ touchPoints.delete(ev.pointerId);
+ if(touchPoints.size<2)pinch=null;
+ if(touchPoints.size===0)pinchUsed=false
+}
+workspace.addEventListener('pointerup',liftTouch,true);
+workspace.addEventListener('pointercancel',liftTouch,true);
+for(const type of ['selectstart','dblclick','dragstart']){
+ workspace.addEventListener(type,ev=>ev.preventDefault())
+}
+
 window.addEventListener('keydown',ev=>{if(ev.code==='Space'&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){spaceHeld=true;ev.preventDefault()}});
 window.addEventListener('keyup',ev=>{if(ev.code==='Space')spaceHeld=false});
 function coords(ev){
@@ -398,7 +453,7 @@ function bufferPoint(pt){
  if(!moveTimer)moveTimer=setTimeout(flushPoints,50)
 }
 overlay.addEventListener('pointerdown',ev=>{
- if(!connected()||ev.button===2)return;
+ if(!connected()||ev.button===2||(ev.pointerType==='touch'&&pinchUsed))return;
  const panning=tool==='pan'||spaceHeld||ev.button===1;
  const pt=coords(ev);
  if(!pt&&!panning)return;
@@ -420,6 +475,7 @@ overlay.addEventListener('pointerdown',ev=>{
  pending.set(myId,s);schedulePending();send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})
 });
 overlay.addEventListener('pointermove',ev=>{
+ if(ev.pointerType==='touch'&&pinchUsed)return;
  if(!activePointer||activePointer.id!==ev.pointerId)return;
  if(activePointer.mode==='pan'){
   view.x+=ev.clientX-activePointer.atX;view.y+=ev.clientY-activePointer.atY;transform();

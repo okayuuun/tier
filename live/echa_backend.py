@@ -256,6 +256,10 @@ async def route_ws(request):
                     cleaned=[clean_point(x) for x in points[:remaining]]
                     stroke['points'].extend(cleaned)
                     await notify(room,{'type':'points','by':player_id,'points':cleaned},exclude=ws)
+                elif action=='cancel':
+                    # A second touch means pinch/zoom, not an unfinished brush mark.
+                    if room['drawing'].pop(player_id,None) is not None:
+                        await notify(room,{'type':'cancel','by':player_id})
                 elif action=='end':
                     stroke=room['drawing'].pop(player_id,None)
                     if stroke:

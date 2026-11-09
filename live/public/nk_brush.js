@@ -107,6 +107,84 @@ const NKMBrush=(()=>{
  }
  return false
 }
+
+/* Common touch viewport for every small art game. One finger draws;
+   two fingers pinch/translate, restoring the stroke from before the gesture. */
+ function bindPinch(canvas,d,cancelDraw){
+  const viewport=document.createElement('div');
+  viewport.className='nkb-zoom-viewport';
+  canvas.parentNode.insertBefore(viewport,canvas);
+  viewport.appendChild(canvas);
+  const bar=document.createElement('div');
+  bar.className='nkb-zoom-bar';
+  const info=document.createElement('span');
+  info.textContent='📱 1本指で描く・2本指で拡大／縮小／移動';
+  const reset=document.createElement('button');
+  reset.type='button';reset.textContent='全体表示に戻す';
+  bar.append(info,reset);
+  viewport.insertAdjacentElement('afterend',bar);
+  const contacts=new Map();
+  let zoom=1,dx=0,dy=0,pinch=null,locked=false,saved=null;
+  function apply(){
+   canvas.style.transformOrigin='0 0';
+   canvas.style.transform='translate('+dx+'px,'+dy+'px) scale('+zoom+')'
+  }
+  function middle(){
+   const [a,b]=[...contacts.values()];
+   if(!a||!b)return null;
+   return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,
+    distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y))}
+  }
+  viewport.addEventListener('pointerdown',ev=>{
+   if(ev.pointerType!=='touch')return;
+   if(!contacts.size)saved=(d.strokes||[]).map(s=>({...s,p:(s.p||[]).map(p=>[...p])}));
+   contacts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+   if(contacts.size>=2){
+    if(!locked){
+     locked=true;
+     d.strokes=saved||d.strokes;
+     if(cancelDraw)cancelDraw();
+     if(d.repaint)d.repaint()
+    }
+    const m=middle(),rect=viewport.getBoundingClientRect();
+    pinch={distance:m.distance,zoom,
+     worldX:(m.x-rect.left-dx)/zoom,worldY:(m.y-rect.top-dy)/zoom};
+    try{viewport.setPointerCapture(ev.pointerId)}catch(_){}
+    ev.preventDefault();ev.stopImmediatePropagation()
+   }
+  },true);
+  viewport.addEventListener('pointermove',ev=>{
+   if(ev.pointerType!=='touch'||!contacts.has(ev.pointerId))return;
+   contacts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+   if(pinch&&contacts.size>=2){
+    const m=middle(),rect=viewport.getBoundingClientRect();
+    zoom=Math.max(1,Math.min(5,pinch.zoom*m.distance/pinch.distance));
+    dx=m.x-rect.left-pinch.worldX*zoom;
+    dy=m.y-rect.top-pinch.worldY*zoom;
+    apply()
+   }
+   if(locked){ev.preventDefault();ev.stopImmediatePropagation()}
+  },true);
+  function release(ev){
+   if(ev.pointerType!=='touch')return;
+   const blocked=locked;
+   contacts.delete(ev.pointerId);
+   if(contacts.size<2)pinch=null;
+   if(!contacts.size){locked=false;saved=null}
+   if(blocked){ev.preventDefault();ev.stopImmediatePropagation()}
+  }
+  viewport.addEventListener('pointerup',release,true);
+  viewport.addEventListener('pointercancel',release,true);
+  viewport.addEventListener('lostpointercapture',release,true);
+  for(const type of ['selectstart','dblclick','dragstart'])
+   viewport.addEventListener(type,ev=>ev.preventDefault());
+  canvas.addEventListener('pointerdown',ev=>{
+   if(ev.pointerType==='touch'&&locked){ev.preventDefault();ev.stopImmediatePropagation()}
+  },true);
+  reset.addEventListener('click',()=>{zoom=1;dx=0;dy=0;apply()});
+  apply()
+ }
+
  function savePNG(key){
  const d=states[key],canvas=d&&document.getElementById(d.canvasId);
  if(!canvas)return alert('描画画面を開いてから保存してください');
@@ -121,5 +199,5 @@ const NKMBrush=(()=>{
  function newStroke(d,p){prepare(d);return {c:d.color,w:d.size||5,p:[p],layer:d.layerIndex,a:d.brushOpacity}}
  function undo(d){prepare(d);for(let i=d.strokes.length-1;i>=0;i--){if((d.strokes[i].layer??0)===d.layerIndex){d.strokes.splice(i,1);return}}}
  function exportStrokes(d){return ordered(d.strokes,d).filter(s=>s.a>=0.01).map(s=>({c:s.c,w:s.w,p:s.p,layer:s.layer??0,a:s.a??1}))}
- return {panel,prepare,ordered,newStroke,undo,exportStrokes,choose,add,visibility,layerOpacity,brushOpacity,color,erase,storedSwatches,saveSwatch,removeSwatch,brushSize,tool,move,eraseAt,interact,savePNG};
+ return {panel,prepare,ordered,newStroke,undo,exportStrokes,choose,add,visibility,layerOpacity,brushOpacity,color,erase,storedSwatches,saveSwatch,removeSwatch,brushSize,tool,move,eraseAt,interact,savePNG,bindPinch};
 })();

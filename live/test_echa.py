@@ -112,6 +112,13 @@ async def main():
         await take_type(two,'layers')
         assert removed['deleted']==layer_id and removed['strokes']==[]
         assert len(ROOMS[code]['layers'])==1 and not ROOMS[code]['strokes']
+        await one.send_json(stroke)
+        await take_type(two,'begin')
+        await one.send_json({'type':'cancel'})
+        cancelled=await take_type(two,'cancel')
+        assert cancelled['by']==first['me']
+        assert first['me'] not in ROOMS[code]['drawing']
+        assert not ROOMS[code]['strokes']
         await two.send_json({'type':'sync'})
         latest=await take_type(two,'sync')
         assert len(latest['layers'])==1

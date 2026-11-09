@@ -17,7 +17,7 @@ function dsBind(){let el=document.getElementById('ds-canvas');if(!el)return;let 
 function xy(e){let r=el.getBoundingClientRect();return [+(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))).toFixed(4),+(Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))).toFixed(4)]}
 el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();if(d.tool==='picker'){NKMBrush.interact(d,ctx,xy(e));return}if(d.tool==='eraser'){pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_){}NKMBrush.interact(d,ctx,xy(e));return}if(d.strokes.length>=85)return error('線の上限に達しました');pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_){}d.strokes.push(NKMBrush.newStroke(d,xy(e)));paint()});
 el.addEventListener('pointermove',e=>{if(pointer!==e.pointerId)return;e.preventDefault();if(d.tool==='eraser'){NKMBrush.interact(d,ctx,xy(e));return}let s=d.strokes.at(-1);if(!s||s.p.length>=90||d.strokes.reduce((n,x)=>n+x.p.length,0)>=2400)return;let x=xy(e),last=s.p.at(-1);if(Math.abs(x[0]-last[0])+Math.abs(x[1]-last[1])>.003){s.p.push(x);paint()}});
-['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));d.repaint=paint;paint()}
+['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));d.repaint=paint;paint();NKMBrush.bindPinch(el,d,()=>{pointer=null})}
 function dsColor(c){if(dsPalette.includes(c)){dsState().color=c;render()}}
 function dsWidth(n){if([2,5,9,14].includes(n)){dsState().size=n;render()}}
 function dsUndo(){NKMBrush.undo(dsState());render()}

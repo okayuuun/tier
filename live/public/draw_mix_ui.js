@@ -14,7 +14,7 @@ function mixBind(base){const el=document.getElementById('mix-canvas');if(!el)ret
  let pointer=null;
  el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();if(d.tool==='picker'){NKMBrush.interact(d,ctx,pt(e));return}if(d.tool==='eraser'){pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_e){}NKMBrush.interact(d,ctx,pt(e));return}if(d.strokes.length>=85)return error('線は85本までです');pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_e){}d.strokes.push(NKMBrush.newStroke(d,pt(e)));paint()});
  el.addEventListener('pointermove',e=>{if(e.pointerId!==pointer)return;e.preventDefault();if(d.tool==='eraser'){NKMBrush.interact(d,ctx,pt(e));return}let s=d.strokes.at(-1),xy=pt(e);if(!s||s.p.length>=85||d.strokes.reduce((k,v)=>k+v.p.length,0)>2400)return;let last=s.p.at(-1);if(Math.abs(last[0]-xy[0])+Math.abs(last[1]-xy[1])>.003){s.p.push(xy);paint()}});
- ['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));d.repaint=paint;paint()}
+ ['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));d.repaint=paint;paint();NKMBrush.bindPinch(el,d,()=>{pointer=null})}
 function mixColor(c){if(!drawColors.includes(c))return;mixData().color=c;render()}
 function mixSize(n){if(![2,5,9].includes(n))return;mixData().size=n;render()}
 function mixUndo(){NKMBrush.undo(mixData());render()}

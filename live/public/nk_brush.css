@@ -4,3 +4,14 @@
 .nkb-row .nkb-swatch{width:28px;height:28px;min-width:28px;padding:0;border:2px solid white;outline:1px solid #be9eb2;border-radius:8px}
 .nkb-row .nkb-swatch:hover{outline-color:#a43e76}
 .nkb-panel .nkb-row{margin-top:9px}
+
+.nkb-zoom-viewport{position:relative;width:100%;aspect-ratio:720/440;overflow:hidden;touch-action:none;
+ border-radius:15px;contain:paint;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.nkb-zoom-viewport canvas{display:block;width:100%;height:auto;touch-action:none;transform-origin:0 0;
+ user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.nkb-zoom-viewport *{user-select:none;-webkit-user-select:none}
+.nkb-zoom-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;
+ padding:8px 12px;margin-bottom:12px;background:#f5edf9;border-radius:0 0 12px 12px;font-size:12px;
+ font-weight:750;color:#654576}
+.nkb-zoom-bar button{padding:8px 12px;border:1px solid #c8a5d7;border-radius:8px;
+ font-size:12px;font-weight:850;color:#653b83;background:#fff}
