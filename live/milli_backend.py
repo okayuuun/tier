@@ -39,14 +39,29 @@ class PostgresMilliStore:
     existing .commit() calls stay compatible with the SQLite fallback.
     """
     def __init__(self, url):
-        from psycopg import connect
+        import psycopg
         from psycopg.rows import dict_row
         if not url.startswith(('postgresql://', 'postgres://')):
             raise ValueError('MILLI_DATABASE_URL はPostgreSQL接続URLを指定してください')
-        self.connection = connect(url, row_factory=dict_row, autocommit=True, connect_timeout=10, sslmode='require')
+        self._driver = psycopg
+        self._url = url
+        self._options = {'row_factory': dict_row, 'autocommit': True,
+                         'connect_timeout': 10, 'sslmode': 'require'}
+        self.connection = self._driver.connect(self._url, **self._options)
 
     def execute(self, query, values=()):
-        return self.connection.execute(query.replace('?', '%s'), values)
+        sql = query.replace('?', '%s')
+        try:
+            return self.connection.execute(sql, values)
+        except (self._driver.OperationalError, self._driver.InterfaceError):
+            # Neon and other idle-scaled databases can close the TCP connection.
+            # Reconnect, but do NOT automatically repeat non-idempotent submissions.
+            self.connection = self._driver.connect(self._url, **self._options)
+            kind = query.lstrip().upper()
+            safe_to_retry = kind.startswith(('SELECT ', 'DELETE ', 'CREATE ', 'ALTER ', 'UPDATE ')) or kind.startswith('INSERT INTO MILLI_VOTES ')
+            if safe_to_retry:
+                return self.connection.execute(sql, values)
+            raise
 
     def commit(self):
         pass
@@ -181,6 +196,7 @@ class MilliService:
         row=self.get(request.match_info['id'])
         return web.json_response({'spec':self.public_spec(json.loads(row['spec']),shuffle=True),
                                   'galleryEnabled':bool(row['gallery_enabled']),
+                                  'persistent':self.persistent,
                                   'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
 
     async def submit(self,request):
@@ -236,7 +252,7 @@ class MilliService:
                                   'galleryEnabled':bool(row['gallery_enabled']),
                                   'responses':[{'id':r['id'],'created':r['created'],'name':r['player'],
                                                 'showcase':bool(r['showcase']),'answers':json.loads(r['answers'])} for r in result],
-                                  'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
+                                  'expiresAt':row['expires'],'persistent':self.persistent},headers={'Cache-Control':'no-store'})
 
     async def gallery_toggle(self,request):
         self.check_published()
