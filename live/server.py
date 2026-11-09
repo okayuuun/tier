@@ -16,6 +16,7 @@ from draw_extra import GAME_IDS as ART_EXTRA_IDS, EVENTS as ART_EXTRA_EVENTS, st
 from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as draw_start, snapshot as draw_snapshot, handle as draw_handle
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
+from milli_backend import MilliService
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
 from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start as studio_start, snapshot as studio_snapshot, public_meta as studio_meta, reveal as studio_reveal
 
@@ -92,6 +93,7 @@ CONFIGS = {
 
 
 MASTER = MasterAdmin()
+MILLI = MilliService(MASTER)
 
 def code():
     while True:
@@ -694,6 +696,14 @@ app.add_routes([
 app.add_routes([web.get('/draw_extra_ui.js',lambda request:web.FileResponse(ROOT/'public'/'draw_extra_ui.js')),
                 web.get('/draw_extra_ui.css',lambda request:web.FileResponse(ROOT/'public'/'draw_extra_ui.css')),
                 web.get('/draw_extra_rules.js',lambda request:web.FileResponse(ROOT/'public'/'draw_extra_rules.js'))])
+app.add_routes([
+    web.get("/milli", lambda request: web.FileResponse(ROOT / "public" / "milli.html")),
+    web.get("/milli.css", lambda request: web.FileResponse(ROOT / "public" / "milli.css")),
+    web.get("/milli.js", lambda request: web.FileResponse(ROOT / "public" / "milli.js")),
+    web.get("/nk_brush.js", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.js")),
+    web.get("/nk_brush.css", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.css")),
+])
+MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
 app.cleanup_ctx.append(task_ctx)
 
