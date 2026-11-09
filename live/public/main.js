@@ -46,7 +46,7 @@ function multiplayerRoomLost(message){
  }
  history.replaceState(null,'',location.pathname);
  landing();
- error('ルーム'+(oldCode?'（'+oldCode+'）':'')+'はサーバーの再起動などで使えなくなりました。下の「新しい部屋を作る」から作り直して、招待URLを友達に送ってください。')
+ error(message.includes('ゲーム開始後')?'このルームはすでにゲームが始まっているため、新しい参加者は入れません。主催者が待機画面に戻ってから参加するか、新しい部屋を作ってください。':'ルーム'+(oldCode?'（'+oldCode+'）':'')+'はサーバーの再起動などで使えなくなりました。下の「新しい部屋を作る」から作り直して、招待URLを友達に送ってください。')
 }
 function openSocket(){
  if(connecting)return;
