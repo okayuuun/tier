@@ -33,6 +33,8 @@ jobs:
         run: python live/test_draw_mix.py
       - name: Test invention and character-design competitions
         run: python live/test_design_games.py
+      - name: Test millishira share, owner privacy, layers and transparency
+        run: python live/test_milli.py
       - name: Import game modules
         run: |
           cd live
