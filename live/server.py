@@ -16,6 +16,7 @@ from draw_extra import GAME_IDS as ART_EXTRA_IDS, EVENTS as ART_EXTRA_EVENTS, st
 from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as draw_start, snapshot as draw_snapshot, handle as draw_handle
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
+from episode_game import GAME_IDS as EPISODE_IDS, EVENTS as EPISODE_EVENTS, start as episode_start, snapshot as episode_snapshot, handle as episode_handle
 from milli_backend import MilliService
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
 from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start as studio_start, snapshot as studio_snapshot, public_meta as studio_meta, reveal as studio_reveal
@@ -27,6 +28,7 @@ MAX_PLAYERS = 12
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
+    "episode": {"title": "誰のエピソード？"},
     "invent": {"title": "発明プレゼン大会"},
     "chardesign": {"title": "キャラクターデザイン依頼"},
     "artmix": {"title": "イラスト×セリフ大合体"},
@@ -123,6 +125,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in EPISODE_IDS and room['phase'] != 'lobby':
+        return episode_snapshot(room, pid)
     if room['game'] in DESIGN_IDS and room['phase'] != 'lobby':
         return design_snapshot(room,pid)
     if room['game'] in DRAW_MIX_IDS and room['phase'] != 'lobby':
@@ -330,6 +334,12 @@ async def handle_event(ws, context, obj):
         room["wordFormat"] = fmt
         await broadcast(room)
         return
+    if t in EPISODE_EVENTS:
+        if room['game'] not in EPISODE_IDS or room['phase'] == 'lobby':
+            raise ValueError('このゲームではまだその操作は使えません')
+        episode_handle(room, pid, t, obj, is_owner)
+        await broadcast(room)
+        return
     if t in DESIGN_EVENTS:
         if room['game'] not in DESIGN_IDS or room['phase']=='lobby':
             raise ValueError('このゲームではこの操作を使えません')
@@ -412,6 +422,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in EPISODE_IDS:
+            episode_start(room)
         elif room['game'] in DESIGN_IDS:
             design_start(room)
         elif room['game'] in DRAW_MIX_IDS:
@@ -519,6 +531,7 @@ async def handle_event(ws, context, obj):
         if not is_owner or phase != "final":
             raise ValueError("ルーム作成者だけがもう一度始められます")
         room["phase"] = "lobby"
+        room.pop('episode', None)
         room.pop('party', None)
         room.pop('drawmix', None)
         room.pop('design', None)
@@ -596,7 +609,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "ep_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
@@ -700,6 +713,11 @@ app.add_routes([
     web.get("/milli", lambda request: web.FileResponse(ROOT / "public" / "milli.html")),
     web.get("/milli.css", lambda request: web.FileResponse(ROOT / "public" / "milli.css")),
     web.get("/milli.js", lambda request: web.FileResponse(ROOT / "public" / "milli.js")),
+    web.get("/episode_ui.js", lambda request: web.FileResponse(ROOT / "public" / "episode_ui.js")),
+    web.get("/episode_ui.css", lambda request: web.FileResponse(ROOT / "public" / "episode_ui.css")),
+    web.get("/profile-maker", lambda request: web.FileResponse(ROOT / "public" / "profile_maker.html")),
+    web.get("/profile-maker.js", lambda request: web.FileResponse(ROOT / "public" / "profile_maker.js")),
+    web.get("/profile-maker.css", lambda request: web.FileResponse(ROOT / "public" / "profile_maker.css")),
     web.get("/nk_brush.js", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.js")),
     web.get("/nk_brush.css", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.css")),
 ])
