@@ -519,6 +519,7 @@ async def handle_event(ws, context, obj):
         room["phase"] = "lobby"
         room.pop('party', None)
         room.pop('drawmix', None)
+        room.pop('design', None)
         room.pop('word', None)
         room["active"] = []
         room["playerConfigs"] = {}
