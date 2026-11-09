@@ -7,6 +7,7 @@ let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 const paintScratch=new Map();
+const layerPaintCache=new Map();
 const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
 function normalizeLayers(data){
@@ -126,7 +127,7 @@ function onMessage(d){
  }
  if(d.type==='snapshot'){
   code=d.code;myId=d.me;owner=d.owner;
-  strokes=Array.isArray(d.strokes)?d.strokes:[];
+  strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
   maxLayers=d.maxLayers||8;normalizeLayers(d.layers);
@@ -145,15 +146,15 @@ function onMessage(d){
   strokes.push(d.stroke);pending.delete(d.stroke.by);
   redraw();schedulePending();updateCount();return
  }
- if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);redraw();updateCount();return}
- if(d.type==='clear'){strokes=[];pending.clear();redraw();schedulePending();updateCount();return}
+ if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
+ if(d.type==='clear'){strokes=[];pending.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
  if(d.type==='layers'){
   if(d.selected&&selectNewLayer)selectedLayer=d.selected;
   selectNewLayer=false;
-  if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]))}
+  if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]));resetPaintCache()}
   normalizeLayers(d.layers);redraw();return
  }
- if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));normalizeLayers(d.layers);redraw();schedulePending();updateCount()}
+ if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));resetPaintCache();normalizeLayers(d.layers);redraw();schedulePending();updateCount()}
 }
 function renderMembers(){
  $('ec-members-count').textContent='・'+members.length+'人参加';
@@ -199,24 +200,46 @@ function sceneScratch(w,h){
  if(!canvas){canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;paintScratch.set(key,canvas)}
  return canvas
 }
-/* Composite ink from bottom-to-top. Erasing happens inside each independent
-   transparent layer, never against another person's layer. Works identically
-   for the live canvas, whole-canvas PNG, and timelapse frames. */
+function resetPaintCache(){layerPaintCache.clear()}
+/* Cache finished strokes on each layer individually. Pending pen/eraser input
+   is composited onto a temporary copy of that one layer, never on top of the
+   whole finished picture. Layer erasers therefore cannot damage other layers.
+   Each new stroke is rasterized once at the relevant output resolution. */
+function renderedLayers(w,h,count){
+ const key=w+'x'+h;
+ let entry=layerPaintCache.get(key);
+ if(!entry||entry.count>count){
+  entry={count:0,images:new Map()};layerPaintCache.set(key,entry)
+ }
+ for(let i=entry.count;i<count;i++){
+  const s=strokes[i],id=s.layer||'base';
+  if(!layers.some(x=>x.id===id))continue;
+  let c=entry.images.get(id);
+  if(!c){c=document.createElement('canvas');c.width=w;c.height=h;entry.images.set(id,c)}
+  const lc=c.getContext('2d');lc.save();lc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);stroke(lc,s);lc.restore()
+ }
+ entry.count=count;
+ return entry.images
+}
 function composite(target,count=strokes.length,live=false){
- const w=target.canvas.width,h=target.canvas.height,scratch=sceneScratch(w,h),sc=scratch.getContext('2d');
+ const w=target.canvas.width,h=target.canvas.height;
+ const completed=renderedLayers(w,h,count),drafts=live?[...pending.values()]:[];
  target.save();target.setTransform(1,0,0,1,0,0);
  target.globalAlpha=1;target.globalCompositeOperation='source-over';
  target.clearRect(0,0,w,h);target.fillStyle='#fff';target.fillRect(0,0,w,h);
  for(const layer of layers){
   if(!layer.visible||layer.opacity<=0)continue;
-  sc.save();sc.setTransform(1,0,0,1,0,0);sc.globalAlpha=1;sc.globalCompositeOperation='source-over';sc.clearRect(0,0,w,h);
-  sc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);
-  for(let i=0;i<count;i++){
-   const s=strokes[i];if((s.layer||'base')===layer.id)stroke(sc,s)
+  let c=completed.get(layer.id);
+  const active=drafts.filter(s=>(s.layer||'base')===layer.id);
+  if(active.length){
+   const scratch=sceneScratch(w,h),sc=scratch.getContext('2d');
+   sc.save();sc.setTransform(1,0,0,1,0,0);sc.globalCompositeOperation='source-over';sc.globalAlpha=1;sc.clearRect(0,0,w,h);
+   if(c)sc.drawImage(c,0,0);
+   sc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);
+   active.forEach(s=>stroke(sc,s));sc.restore();
+   c=scratch
   }
-  if(live)for(const s of pending.values())if((s.layer||'base')===layer.id)stroke(sc,s);
-  sc.restore();
-  target.globalAlpha=layer.opacity;target.drawImage(scratch,0,0)
+  if(c){target.globalAlpha=layer.opacity;target.drawImage(c,0,0)}
  }
  target.restore()
 }
