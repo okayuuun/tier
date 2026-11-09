@@ -2,6 +2,7 @@
 /* Actual multiplayer limits enforced by the corresponding server game modules.
    Room-wide limit: 12, some game modes set smaller maxima. */
 const GAME_PLAYERS={
+ oneword:[3,12],spectrum:[3,12],quiet:[2,10],bluff:[2,8],wordagents:[4,12],
  tier:[2,12],value:[2,12],either:[2,12],quiz:[2,12],
  ito:[2,10],propose:[2,12],soup:[2,12],akaito:[2,10],
  unique:[2,12],wolf:[3,12],unanimous:[2,12],insider:[4,12],
@@ -11,7 +12,7 @@ const GAME_PLAYERS={
  drawbluff:[3,10],artmix:[3,12],artcollab:[2,12],
  reverseart:[2,12],invent:[2,12],chardesign:[2,12],episode:[3,12]
 };
-const GAME_FAVORITES=['episode','wolf','secret_rank','propose','unanimous','booktitle','drawrelay','quiz','unique','tier','either','value','tanka','artmix','artcontest'];
+const GAME_FAVORITES=['oneword','spectrum','quiet','bluff','wordagents','episode','wolf','secret_rank','propose','unanimous','booktitle','drawrelay','quiz','unique','tier','either','value','tanka','artmix','artcontest'];
 let gamesFor='all',gamesSort='recommended';
 function playerRange(game){const [min,max]=GAME_PLAYERS[game]||[2,12];return '👥 '+min+'〜'+max+'人'}
 function gameFilterBar(){

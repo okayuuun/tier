@@ -73,6 +73,34 @@ const HOWTO = {
   ]}
 };
 
+/* Five original quick guides for board-game-inspired mini games. */
+Object.assign(HOWTO,{
+ oneword:{title:'ひとこと一致',icon:'💬',tagline:'Just Oneを参考にしたアレンジ',slides:[
+  {title:'回答者以外にお題が届く',body:'3〜12人用。毎回1人が回答役になり、それ以外の人だけが秘密のお題を確認します。',tip:'今回の回答者にはお題が見えません。',picture:{type:'two',a:'秘密のお題',b:'回答者はお題を見ない',tag:'ヒントで伝えよう'}},
+  {title:'同じヒントは全消去',body:'ヒント役がそれぞれ1語を提出。同じ単語が重なった場合は、そのヒントはすべて取り除かれます。',tip:'答えそのものはヒントに使えません。',picture:{type:'clues',tag:'かぶらない単語を考える'}},
+  {title:'答えを当てて全員に1点',body:'残ったヒントだけを見て回答者が1回だけ予想します。正解すればみんなに1点。全6ラウンドです。',tip:'サイト独自のルールとお題を使用。',picture:{type:'progress',tag:'6ラウンドに挑戦'}}
+ ]},
+ spectrum:{title:'感覚メーター',icon:'🌡️',tagline:'Wavelengthを参考にしたアレンジ',slides:[
+  {title:'二つの端で感覚を表す',body:'3〜12人用。「安い〜高い」のようなテーマと、ヒント役だけが分かる0〜100の秘密位置があります。',tip:'ヒント役以外に数字は隠されます。',picture:{type:'two',a:'安い：0',b:'高い：100',tag:'どのあたり？'}},
+  {title:'ヒントから位置を当てる',body:'ヒント役が秘密位置をイメージした言葉を公開。他の人は0〜100を選んで予想します。',tip:'正解との差が5以内で3点、15以内で2点、25以内で1点。',picture:{type:'number',tag:'みんなの感覚は同じ？'}},
+  {title:'5ラウンドで得点を競う',body:'答え合わせでは予想位置と正解位置をまとめて表示します。毎回ヒント役が交代します。',tip:'数値のダイヤル表示はサイト独自のものです。',picture:{type:'progress',tag:'みんなの感覚を比べよう'}}
+ ]},
+ quiet:{title:'無言の数字',icon:'🤫',tagline:'The Mindを参考にしたアレンジ',slides:[
+  {title:'秘密の数字カードを受け取る',body:'2〜10人用。各ステージで1人あたり1枚、2枚、3枚とカードが増えていきます。',tip:'自分のカードは自分にだけ見えます。',picture:{type:'number',tag:'数字は内緒'}},
+  {title:'相談せず小さい順に出す',body:'みんなでタイミングを合わせて小さい順にカードを出します。小さい数字が残っていたらライフが1減ります。',tip:'失敗時は飛ばした小さいカードを捨てます。',picture:{type:'order',tag:'タイミングがカギ'}},
+  {title:'3ステージを生き残る',body:'共有ライフを守りながら3ステージ突破を目指す協力ゲームです。',tip:'The Mindとはステージ数などが異なります。',picture:{type:'hearts',tag:'ライフ3つで勝負'}}
+ ]},
+ bluff:{title:'花かドクロか',icon:'💀',tagline:'Skullを参考にした一枚勝負',slides:[
+  {title:'花かドクロを一枚置く',body:'2〜8人用。毎ラウンド全員が花かドクロを秘密で1枚選んで置きます。',tip:'相手にはカードの内容が見えません。',picture:{type:'two',a:'🌸 花',b:'💀 ドクロ',tag:'心理戦のスタート'}},
+  {title:'めくれる枚数を競り合う',body:'「何枚の花をめくれるか」を入札。ほかの人は入札を上げるかパス。最高入札者がめくります。',tip:'枚数は参加人数以下。',picture:{type:'choices',labels:['1枚','2枚','3枚'],selected:1,tag:'ここでブラフを読む'}},
+  {title:'花なら成功、ドクロなら失敗',body:'宣言枚数の花をめくれたら1勝、ドクロを開くと失敗。2勝または6ラウンドで結果発表です。',tip:'公式の手札構成・ゲーム進行とは異なる簡略版です。',picture:{type:'progress',tag:'先に2勝を目指す'}}
+ ]},
+ wordagents:{title:'暗号ワード対決',icon:'🕵️',tagline:'Codenamesを参考にした4×4対戦',slides:[
+  {title:'赤と青のチームで対戦',body:'4〜12人用。単語16枚が並び、ヒント係だけがカードの正しい色を確認できます。',tip:'赤と青のチームは自動編成されます。',picture:{type:'matrix',tag:'仲間の言葉はどれ？'}},
+  {title:'ヒントは1語と数字',body:'ヒント係が仲間に1語と1〜3の数字を公開。回答係が盤面の単語を選びます。',tip:'盤面にある単語そのものをヒントには使えません。',picture:{type:'clues',tag:'連想して言葉を見つける'}},
+  {title:'自分の色を先に全部発見',body:'自チームのカードを先に全部公開すれば勝利。別の色や無所属を開くと交代、危険カードを引くと負けです。',tip:'公式画像・単語カード・ルールとは異なる独自アレンジです。',picture:{type:'versus',a:'🔴 赤チーム',b:'🔵 青チーム',tag:'先に仲間の言葉を探す'}}
+ ]}
+});
 let rulesState={game:null,page:0,trigger:null};
 const RE=(s)=>String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch]));
 const RCOL={pink:'#e73592',pinkLight:'#fce3f0',dark:'#60304f',gold:'#ffde7d',mint:'#d5f5df',red:'#ffe0e5',blue:'#dceafb',cream:'#fffaf5'};

@@ -19,6 +19,8 @@ jobs:
       - name: Verify JavaScript files
         run: |
           for f in live/public/*.js; do node --check "$f"; done
+      - name: Test five popular board-game-inspired online modes
+        run: python live/test_board_games.py
       - name: Test all three new game flows
         run: python live/test_extra_modes.py
       - name: Test the newest party game modes

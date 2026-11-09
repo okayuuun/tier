@@ -19,8 +19,10 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira", "oneword", "spectrum", "quiet", "bluff", "wordagents")
 LABELS = {
+    "oneword": "ひとこと一致", "spectrum": "感覚メーター", "quiet": "無言の数字",
+    "bluff": "花かドクロか", "wordagents": "暗号ワード対決",
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
     "propose": "たった今考えたプロポーズの言葉を君に捧ぐよ。", "soup": "ウミガメのスープ",
@@ -38,6 +40,12 @@ LABELS = {
 ACTION_LABELS = {
     "milli_publish":"ミリしら共有セット公開", "milli_submit":"ミリしら回答",
     "ep_topic":"エピソードのお題設定", "ep_submit":"匿名エピソードの提出", "ep_guess":"投稿者の予想", "ep_force":"エピソードを先に進める", "ep_next":"次のお題",
+    "bg_hint":"ひとことヒント提出", "bg_answer":"お題回答", "bg_skip":"ひとこと途中進行",
+    "bg_next":"ひとこと次へ", "sp_clue":"感覚ヒント提出", "sp_guess":"感覚位置予想",
+    "sp_force":"感覚途中集計", "sp_next":"感覚次へ", "qt_play":"無言のカードを出す",
+    "qt_next":"無言の次ステージ", "bl_place":"花かドクロを置く", "bl_bid":"枚数入札",
+    "bl_pass":"パス", "bl_flip":"カード公開", "bl_next":"次の勝負",
+    "wa_clue":"チームのヒント", "wa_pick":"言葉を公開", "wa_pass":"チーム手番終了",
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
     "example":"ランダム例題を取得", "topic":"お題提出", "answer":"秘密の正解を登録", "guess":"予想を提出",
     "next":"次のラウンド", "force":"スキップ・進行", "end":"ゲーム終了", "restart":"再プレイ",

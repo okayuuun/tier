@@ -1,0 +1,68 @@
+/* Digital board-game adaptations. Works on desktop and smartphone. */
+.ba-progress{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;
+padding:11px 13px;margin:9px 0 14px;border-radius:12px;background:#f8edf4;
+color:#945080;font-size:12px;font-weight:800}
+.ba-progress strong{font-size:13px;color:#82285d}.ba-progress span{flex:1;text-align:right;min-width:160px}
+.ba-hero{background:linear-gradient(115deg,#ffdfef,#fff3cd);border-radius:18px;border:1px solid #efbad5;
+padding:18px 19px;color:#863268;font-size:22px;line-height:1.5;font-weight:900;margin:14px 0}
+.ba-hero strong{display:block;font-size:27px}.ba-hero small{display:block;font-size:13px;color:#75526c;font-weight:650;margin:5px 0}
+.ba-role{margin:12px 0;border-radius:12px;padding:13px 16px;background:#f4eafb;color:#76548a;
+font-size:15px;font-weight:850}
+.ba-wait{background:#f4f4fa;border:1px solid #e4dce7;padding:15px;border-radius:12px;line-height:1.7}
+.ba-highlight{background:#fff2d8;border:2px solid #edc68b;border-radius:16px;padding:18px;
+margin:15px 0;color:#8f552b;text-align:center;font-weight:900}
+.ba-highlight strong{display:block;font-size:clamp(25px,5vw,42px);overflow-wrap:anywhere;margin:6px 0}
+.ba-highlight small{display:block;font-size:13px;color:#80634e}
+.ba-hints,.ba-cards{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.ba-chip{display:inline-block;padding:11px 15px;background:white;border:1.5px solid #d5aed2;
+border-radius:12px;color:#842e6b;font-weight:900;font-size:17px}
+.ba-duplicate{text-decoration:line-through;opacity:.44}
+.ba-stats,.ba-help{font-size:14px;color:#795574;line-height:1.8;font-weight:700;margin:11px 0}
+.ba-axis{display:grid;grid-template-columns:1fr 2.3fr 1fr;gap:7px;align-items:center;margin:18px 0}
+.ba-axis strong{font-size:15px;color:#8a3d6b;text-align:center}
+.ba-axis span{font-size:clamp(11px,2.6vw,15px);background:linear-gradient(90deg,#cbeaff,#f8d5f2,#ffcd8b);
+padding:13px 3px;text-align:center;border-radius:22px;font-weight:900;color:#65536f}
+.ba-range-line{display:flex;align-items:center;gap:14px;margin:13px 0 20px}
+.ba-range-line input{width:100%;flex:1;accent-color:#c23a8d;height:35px;touch-action:pan-y}
+.ba-range-line b{font-size:26px;min-width:60px;color:#ad337b;text-align:right}
+.ba-results{display:grid;gap:7px;margin:15px 0}
+.ba-results>div{display:flex;align-items:center;justify-content:space-between;gap:9px;background:#fff;
+border:1px solid #ecd4e0;border-radius:10px;padding:10px 14px}
+.ba-results strong{font-size:14px;flex:1;color:#7c366b}.ba-results span{font-size:12px;color:#82647a}.ba-results b{font-size:16px;color:#38865c}
+.ba-played{display:flex;gap:7px;flex-wrap:wrap;margin:15px 0}
+.ba-num{padding:9px;background:#d9f4e5;color:#246f52;font-weight:1000;font-size:17px;border-radius:9px}
+.ba-number{font:inherit;min-width:65px;min-height:100px;border:2px solid #eab8d2;border-radius:13px;
+background:linear-gradient(160deg,#fff8fc,#ffe6f2);color:#a12c77;font-size:30px;font-weight:1000;cursor:pointer}
+.ba-warning{border-radius:10px;padding:12px;background:#fff2d5;color:#9a6031;font-weight:700}
+.ba-hidden-card{font:inherit;font-size:14px;font-weight:850;background:#fff4fc;color:#874374;border:2px dashed #e0a5c7;
+border-radius:11px;padding:22px 13px;min-width:110px;cursor:pointer}
+.ba-hidden-card:disabled{opacity:.5;cursor:default}
+.ba-reveal-card{border-radius:11px;padding:14px;background:#f6ecf6;color:#743569;font-weight:900}
+.ba-teams{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:15px 0}
+.ba-teams>div{padding:15px;border-radius:13px;text-align:center;font-weight:1000;font-size:15px}
+.ba-red{background:#ffe0df;color:#a13a45}.ba-blue{background:#d7ecff;color:#356da5}
+.ba-word-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:16px 0}
+.ba-word{font:inherit;min-height:77px;min-width:0;border:2px solid #e4ccda;border-radius:11px;
+font-weight:900;font-size:clamp(11px,2.4vw,17px);background:#fff9ec;color:#714969;overflow-wrap:anywhere;
+padding:7px 4px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
+.ba-word small{font-size:10px;font-weight:700;opacity:.8}
+.ba-word:disabled{cursor:default}
+.ba-word.ba-revealed{opacity:.72}
+.ba-word.ba-red-card{background:#f9cbd0;color:#993642;border-color:#e2a1a9}
+.ba-word.ba-blue-card{background:#c7e3fc;color:#35608d;border-color:#93c0e7}
+.ba-word.ba-neutral-card{background:#e8e6df;color:#655c59;border-color:#d4d0c8}
+.ba-word.ba-trap-card{background:#3f3441;color:#fff;border-color:#2a2730}
+.ba-scoreboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:21px 0 11px}
+.ba-score{display:flex;gap:8px;justify-content:space-between;align-items:center;border:1px solid #f0d4e2;
+border-radius:10px;padding:10px 12px;background:#fff;font-size:12px;color:#654b5e;font-weight:800}
+.ba-score b{white-space:nowrap;color:#bb387c;font-size:13px}
+.ba-history{border:1px solid #f0cfdf;border-radius:12px;overflow:hidden;margin:16px 0}
+.ba-history div{padding:11px 14px;background:#fff9fc;border-bottom:1px solid #f2dfeb;font-size:13px;font-weight:800;color:#69445c}
+.ba-history div:last-child{border-bottom:0}
+@media(max-width:600px){
+.ba-hero{font-size:19px;padding:13px}.ba-hero strong{font-size:23px}
+.ba-word-grid{gap:5px}.ba-word{min-height:66px;font-size:12px}
+.ba-axis{gap:3px}.ba-axis strong{font-size:12px}
+.ba-scoreboard{grid-template-columns:repeat(2,minmax(0,1fr))}
+.ba-progress span{text-align:left}
+}
