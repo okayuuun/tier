@@ -2,7 +2,14 @@
 <html lang="ja">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#a967d5"><title>お絵描きチャット｜なかみくらべ。</title>
-<link rel="stylesheet" href="/echa.css?v=3"></head>
+<link rel="stylesheet" href="/echa.css?v=3">
+<style>
+.ec-recovery{margin:12px clamp(12px,2vw,25px);padding:16px 19px;border:2px solid #d0a1b3;background:#fff1f1;border-radius:13px;color:#773e4d}
+.ec-recovery[hidden]{display:none}
+.ec-recovery strong{display:block;font-size:16px;margin-bottom:7px}
+.ec-recovery a{display:inline-block;color:white;text-decoration:none;background:#8350a9;border-radius:9px;padding:11px 15px;font-weight:850;margin-top:10px}
+.ec-connection-note{line-height:1.8;font-size:12px;background:#f5f0fa;padding:11px;border-radius:9px;margin:10px 0}
+</style></head>
 <body>
 <header class="ec-header"><a href="/">♡ なかみくらべ。</a><strong>🎨 みんなの絵チャ</strong><div class="ec-row ec-header-nav"><a class="ec-header-link" href="/" target="_blank" rel="noopener">🎮 他のゲームを別タブで遊ぶ</a><a class="ec-header-link" href="/">ゲーム一覧へ戻る</a></div><div class="ec-status" id="ec-status">未接続</div></header>
 <main>
@@ -13,9 +20,16 @@
  <label>ルームコード（参加するときだけ）<input id="ec-code" type="text" maxlength="6" placeholder="6桁のコード" autocapitalize="characters"></label>
  <div class="ec-row"><button class="ec-primary" id="ec-create">新しいキャンバスを作る</button><button id="ec-join-btn">ルームに参加</button></div>
  <p class="ec-small">最大12人まで同時に描けます。スマホ・タブレット・PCで参加可能。ログイン・外部DB設定は不要です。</p>
+<p class="ec-connection-note">接続が切れた場合は自動で再接続します。無料サーバーの再起動でルームが消えた場合には、新しいルームを作る案内を表示します。</p>
  <p class="ec-warning">この絵チャは一時保存です。サーバー再起動やデプロイでキャンバスとチャット履歴が消える場合があります。大切な作品はPNGまたはタイムラプス動画で保存してください。</p>
  <p class="ec-error" id="ec-join-error" role="alert"></p>
  </div>
+</section>
+<section id="ec-recovery" class="ec-recovery" role="alert" hidden>
+<strong>前の絵チャの部屋に接続できません</strong>
+<p id="ec-recovery-text">サーバーが再起動した可能性があります。</p>
+<p>以前の絵がまだ画面に表示されている場合は、先に「🖼️ 全体をPNG保存」を押してください。</p>
+<a href="/echa">＋ 新しい絵チャの部屋を作る</a>
 </section>
 <section id="ec-room" class="ec-room" hidden>
  <div class="ec-topbar">
@@ -76,6 +90,6 @@
   </div>
 </div>
 </main>
-<script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=3" defer></script>
+<script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=4" defer></script>
 </body>
 </html>
