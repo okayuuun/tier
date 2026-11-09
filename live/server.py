@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
 from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format, validate_deck as validate_word_deck
+from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as draw_start, snapshot as draw_snapshot, handle as draw_handle
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
@@ -35,6 +36,8 @@ CONFIGS = {
     "secret_rank": {"title": "シークレットランキング"},
     "describe": {"title": "カタカナーシ（Webアレンジ）"},
     "drawfake": {"title": "エセ芸術家ニューヨークへ行く（Webアレンジ）"},
+    "artguide": {"title": "こっそり絵の指示書"},
+    "drawrelay": {"title": "お絵描き伝言リレー"},
     "mysterymail": {"title": "謎解きメール"},
     "soup": {"title": "ひらめきのスープ"},
     "tier": {
@@ -107,6 +110,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in DRAW_IDS and room['phase'] != 'lobby':
+        return draw_snapshot(room, pid)
     if room['game'] in WORD_IDS and room['phase'] != 'lobby':
         return word_snapshot(room, pid)
     if room['game'] in MORE_IDS and room['phase'] != 'lobby':
@@ -306,6 +311,12 @@ async def handle_event(ws, context, obj):
         room["wordFormat"] = fmt
         await broadcast(room)
         return
+    if t in DRAW_EVENTS:
+        if room['game'] not in DRAW_IDS or room['phase'] == 'lobby':
+            raise ValueError('このゲームではまだその操作は使えません')
+        draw_handle(room, pid, t, obj, is_owner)
+        await broadcast(room)
+        return
     if t in WORD_EVENTS:
         if room["game"] not in WORD_IDS or room["phase"] == "lobby":
             raise ValueError("このゲームではまだその操作は使えません")
@@ -364,6 +375,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in DRAW_IDS:
+            draw_start(room)
         elif room['game'] in WORD_IDS:
             word_start(room)
         elif room['game'] in MORE_IDS:
@@ -538,7 +551,7 @@ async def websocket(request):
                     event = str(obj.get("type", ""))[:55]
                     detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                     MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "final"):
+                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "word_reveal", "art_reveal", "relay_reveal", "final"):
                         MASTER.save_match(after_room)
             except (ValueError, KeyError, TypeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
@@ -627,6 +640,11 @@ app.add_routes([
     web.get("/master.js", lambda request: web.FileResponse(ROOT / "public" / "master.js")),
     web.get("/master.css", lambda request: web.FileResponse(ROOT / "public" / "master.css")),
     web.get("/master_gate.js", lambda request: web.FileResponse(ROOT / "public" / "master_gate.js")),
+])
+app.add_routes([
+    web.get("/draw_ui.js", lambda request: web.FileResponse(ROOT / "public" / "draw_ui.js")),
+    web.get("/draw_ui.css", lambda request: web.FileResponse(ROOT / "public" / "draw_ui.css")),
+    web.get("/draw_rules.js", lambda request: web.FileResponse(ROOT / "public" / "draw_rules.js")),
 ])
 MASTER.register(app, ROOMS, broadcast)
 app.cleanup_ctx.append(task_ctx)
