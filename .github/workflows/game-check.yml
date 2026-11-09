@@ -2,6 +2,8 @@ name: Game syntax and smoke test
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 jobs:
   check:
@@ -35,6 +37,8 @@ jobs:
         run: python live/test_design_games.py
       - name: Test millishira share, owner privacy, layers and transparency
         run: python live/test_milli.py
+      - name: Test drawing palette, tools and layer order
+        run: node live/test_brush.js
       - name: Import game modules
         run: |
           cd live
