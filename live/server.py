@@ -587,7 +587,9 @@ async def health(request):
 
 
 async def websocket(request):
-    ws = web.WebSocketResponse(heartbeat=20, max_msg_size=800000)
+    # Browser game rounds may render large artwork; keepalive text frames
+    # continue every 20 seconds, while socket ping timeout is more lenient.
+    ws = web.WebSocketResponse(heartbeat=60, max_msg_size=800000)
     await ws.prepare(request)
     ctx = {"room": None, "pid": None}
     try:
