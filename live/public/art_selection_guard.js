@@ -24,9 +24,22 @@
   }
  }
  document.addEventListener('pointerdown',mark,true);
- document.addEventListener('touchstart',mark,{capture:true,passive:true});
+ // WebKit can still show its "Copy Link with Highlight" callout when CSS
+ // user-select is none. Cancel ONLY native touch defaults over actual art
+ // surfaces, never on buttons, links, text fields or the rest of the page.
+ // Do not stop event propagation: our Pointer Events brush and pinch handlers
+ // must continue receiving the complete gesture.
+ function blockNativeTouch(event){
+  if(surface(event.target)){
+   mark(event);
+   if(event.cancelable!==false)event.preventDefault()
+  }
+ }
+ document.addEventListener('touchstart',blockNativeTouch,{capture:true,passive:false});
  document.addEventListener('pointermove',refresh,true);
- document.addEventListener('touchmove',refresh,{capture:true,passive:true});
+ document.addEventListener('touchmove',blockNativeTouch,{capture:true,passive:false});
+ document.addEventListener('gesturestart',blockNativeTouch,{capture:true,passive:false});
+ document.addEventListener('gesturechange',blockNativeTouch,{capture:true,passive:false});
  for(const type of ['contextmenu','selectstart','dragstart','dblclick']){
   document.addEventListener(type,event=>{
    if(surface(event.target)){

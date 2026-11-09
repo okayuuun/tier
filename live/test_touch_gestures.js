@@ -48,4 +48,30 @@ assert(vp.emit('dblclick',{}).prevented,'double-click text selection blocked');
 assert(vp.emit('selectstart',{}).prevented,'text selection blocked');
 const bar=vp.parentNode.children.find(el=>el.name==='div'&&el!==vp);
 assert(bar&&bar.children.some(el=>el.name==='button'),'reset view button available');
+// Two stationary fingers should undo exactly one prior completed stroke.
+const parent2=new Element('parent'),canvas2=new Element('canvas');
+canvas2.parentNode=parent2;
+const art2={strokes:[
+ {layer:0,p:[[0,0]],c:'#000000',w:5},
+ {layer:0,p:[[.5,.5]],c:'#ffffff',w:5}
+],layerIndex:0,repaint(){}};
+brush.bindPinch(canvas2,art2,()=>{});
+const vp2=parent2.children[0];
+vp2.emit('pointerdown',{pointerId:10,clientX:50,clientY:50});
+vp2.emit('pointerdown',{pointerId:11,clientX:100,clientY:50});
+vp2.emit('pointerup',{pointerId:10});
+vp2.emit('pointerup',{pointerId:11});
+assert.equal(art2.strokes.length,1,'stationary two-finger tap undoes one stroke');
+assert.equal(art2.strokes[0].c,'#000000','the previous stroke remains');
+// Fingers spread apart: zoom only, no undo.
+vp2.emit('pointerdown',{pointerId:12,clientX:50,clientY:50});
+vp2.emit('pointerdown',{pointerId:13,clientX:100,clientY:50});
+vp2.emit('pointermove',{pointerId:13,clientX:180,clientY:50});
+vp2.emit('pointerup',{pointerId:13});
+vp2.emit('pointerup',{pointerId:12});
+assert.equal(art2.strokes.length,1,'pinching must never undo');
+// Single-finger tap never undoes.
+vp2.emit('pointerdown',{pointerId:14,clientX:60,clientY:60});
+vp2.emit('pointerup',{pointerId:14});
+assert.equal(art2.strokes.length,1,'single touch must not undo');
 console.log('PASS: one-finger drawing, pinch zoom, 2-finger cancellation and no text selection');

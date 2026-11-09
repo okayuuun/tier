@@ -382,6 +382,7 @@ workspace.addEventListener('wheel',ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1
    the current brush stroke so there are no unwanted marks on the canvas. */
 const touchPoints=new Map();
 let pinch=null,pinchUsed=false;
+let firstTouchAt=0,twoFingerTap=false,touchMoved=false,hadTwoFingers=false;
 function pinchInfo(){
  const [a,b]=[...touchPoints.values()];
  if(!a||!b)return null;
@@ -390,8 +391,17 @@ function pinchInfo(){
 }
 workspace.addEventListener('pointerdown',ev=>{
  if(ev.pointerType!=='touch')return;
- touchPoints.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+ if(touchPoints.size===0){
+  firstTouchAt=Date.now();twoFingerTap=false;touchMoved=false;hadTwoFingers=false
+ }
+ touchPoints.set(ev.pointerId,{x:ev.clientX,y:ev.clientY,
+                              startX:ev.clientX,startY:ev.clientY});
+ if(touchPoints.size>2)twoFingerTap=false;
  if(touchPoints.size===2){
+  hadTwoFingers=true;
+  // A quick, stationary two-finger tap undoes one completed operation.
+  // Moving fingers, a third finger or holding too long cannot trigger undo.
+  twoFingerTap=!touchMoved&&Date.now()-firstTouchAt<=260;
   if(activePointer?.mode==='draw'){
    if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
    sendQueue.length=0;
@@ -410,7 +420,11 @@ workspace.addEventListener('pointerdown',ev=>{
 },true);
 workspace.addEventListener('pointermove',ev=>{
  if(ev.pointerType!=='touch'||!touchPoints.has(ev.pointerId))return;
- touchPoints.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+ const point=touchPoints.get(ev.pointerId);
+ if(Math.hypot(ev.clientX-point.startX,ev.clientY-point.startY)>12){
+  touchMoved=true;twoFingerTap=false
+ }
+ point.x=ev.clientX;point.y=ev.clientY;
  if(pinch&&touchPoints.size>=2){
   const pos=pinchInfo(),rect=workspace.getBoundingClientRect();
   view.zoom=Math.max(.08,Math.min(3.2,pinch.zoom*pos.distance/pinch.distance));
@@ -421,9 +435,18 @@ workspace.addEventListener('pointermove',ev=>{
 },true);
 function liftTouch(ev){
  if(ev.pointerType!=='touch')return;
+ if(ev.type==='pointercancel')twoFingerTap=false;
  touchPoints.delete(ev.pointerId);
  if(touchPoints.size<2)pinch=null;
- if(touchPoints.size===0)pinchUsed=false
+ if(touchPoints.size===0){
+  const undoTap=hadTwoFingers&&twoFingerTap&&!touchMoved&&
+                Date.now()-firstTouchAt<=430;
+  pinchUsed=false;twoFingerTap=false;hadTwoFingers=false;
+  if(undoTap&&connected()){
+   send({type:'undo'});
+   alertUI('↶ 2本指タップ：1手戻す操作を送信しました')
+  }
+ }
 }
 workspace.addEventListener('pointerup',liftTouch,true);
 workspace.addEventListener('pointercancel',liftTouch,true);

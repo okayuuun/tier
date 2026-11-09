@@ -43,6 +43,8 @@ jobs:
         run: python live/test_echa.py
       - name: Test mobile pinch gestures and touch safe controls
         run: node live/test_touch_gestures.js
+      - name: Test two-finger tap undo versus pinch in shared echa
+        run: node live/test_echa_touch.js
       - name: Test long-press selection blocking without affecting chat inputs
         run: node live/test_art_selection_guard.js
       - name: Test profile maker sharing and sanitization

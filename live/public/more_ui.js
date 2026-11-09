@@ -15,7 +15,7 @@ const moreTitle=(sub,title,html)=>{
    const state={strokes:[],repaint:drawPreview};
    NKMBrush.bindPinch(canvas,state,()=>{
     moreDrawing=false;moreDrawPoints=[];drawPreview()
-   });
+   },()=>resetDraw());
    canvas.parentNode.style.aspectRatio='1000 / 660'
   }
  }

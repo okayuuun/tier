@@ -110,7 +110,7 @@ const NKMBrush=(()=>{
 
 /* Common touch viewport for every small art game. One finger draws;
    two fingers pinch/translate, restoring the stroke from before the gesture. */
- function bindPinch(canvas,d,cancelDraw){
+ function bindPinch(canvas,d,cancelDraw,onUndoGesture){
   const viewport=document.createElement('div');
   viewport.className='nkb-zoom-viewport';
   canvas.parentNode.insertBefore(viewport,canvas);
@@ -118,13 +118,14 @@ const NKMBrush=(()=>{
   const bar=document.createElement('div');
   bar.className='nkb-zoom-bar';
   const info=document.createElement('span');
-  info.textContent='📱 1本指で描く・2本指で拡大／縮小／移動';
+  info.textContent='📱 1本指で描画・2本指タップで1手戻す・2本指で拡大／移動';
   const reset=document.createElement('button');
   reset.type='button';reset.textContent='全体表示に戻す';
   bar.append(info,reset);
   viewport.insertAdjacentElement('afterend',bar);
   const contacts=new Map();
   let zoom=1,dx=0,dy=0,pinch=null,locked=false,saved=null;
+  let firstTouchAt=0,twoFingerTap=false,touchMoved=false;
   function apply(){
    canvas.style.transformOrigin='0 0';
    canvas.style.transform='translate('+dx+'px,'+dy+'px) scale('+zoom+')'
@@ -137,8 +138,14 @@ const NKMBrush=(()=>{
   }
   viewport.addEventListener('pointerdown',ev=>{
    if(ev.pointerType!=='touch')return;
-   if(!contacts.size)saved=(d.strokes||[]).map(s=>({...s,p:(s.p||[]).map(p=>[...p])}));
-   contacts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+   if(!contacts.size){
+    firstTouchAt=Date.now();touchMoved=false;twoFingerTap=false;
+    saved=(d.strokes||[]).map(s=>({...s,p:(s.p||[]).map(p=>[...p])}))
+   }
+   contacts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY,
+                              startX:ev.clientX,startY:ev.clientY});
+   if(contacts.size>2)twoFingerTap=false;
+   if(contacts.size===2)twoFingerTap=!touchMoved&&Date.now()-firstTouchAt<=260;
    if(contacts.size>=2){
     if(!locked){
      locked=true;
@@ -155,7 +162,11 @@ const NKMBrush=(()=>{
   },true);
   viewport.addEventListener('pointermove',ev=>{
    if(ev.pointerType!=='touch'||!contacts.has(ev.pointerId))return;
-   contacts.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+   const point=contacts.get(ev.pointerId);
+   if(Math.hypot(ev.clientX-point.startX,ev.clientY-point.startY)>12){
+    touchMoved=true;twoFingerTap=false
+   }
+   point.x=ev.clientX;point.y=ev.clientY;
    if(pinch&&contacts.size>=2){
     const m=middle(),rect=viewport.getBoundingClientRect();
     zoom=Math.max(1,Math.min(5,pinch.zoom*m.distance/pinch.distance));
@@ -168,9 +179,18 @@ const NKMBrush=(()=>{
   function release(ev){
    if(ev.pointerType!=='touch')return;
    const blocked=locked;
+   if(ev.type==='pointercancel'||ev.type==='lostpointercapture')twoFingerTap=false;
    contacts.delete(ev.pointerId);
    if(contacts.size<2)pinch=null;
-   if(!contacts.size){locked=false;saved=null}
+   if(!contacts.size){
+    const undoTap=blocked&&twoFingerTap&&!touchMoved&&Date.now()-firstTouchAt<=430;
+    locked=false;saved=null;twoFingerTap=false;
+    if(undoTap){
+     if(typeof onUndoGesture==='function')onUndoGesture();
+     else undo(d);
+     if(d.repaint)d.repaint()
+    }
+   }
    if(blocked){ev.preventDefault();ev.stopImmediatePropagation()}
   }
   viewport.addEventListener('pointerup',release,true);
