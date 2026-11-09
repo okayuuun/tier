@@ -25,6 +25,8 @@ jobs:
         run: python live/test_more_modes.py
       - name: Test senryu, flexible tanka, and book titles
         run: python live/test_word_games.py
+      - name: Test secret drawing and picture telephone
+        run: python live/test_draw_party.py
       - name: Import game modules
         run: |
           cd live
