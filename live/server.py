@@ -17,6 +17,7 @@ from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as dra
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from episode_game import GAME_IDS as EPISODE_IDS, EVENTS as EPISODE_EVENTS, start as episode_start, snapshot as episode_snapshot, handle as episode_handle
+from echa_backend import register as register_echa
 from milli_backend import MilliService
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
 from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start as studio_start, snapshot as studio_snapshot, public_meta as studio_meta, reveal as studio_reveal
@@ -721,6 +722,12 @@ app.add_routes([
     web.get("/nk_brush.js", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.js")),
     web.get("/nk_brush.css", lambda request: web.FileResponse(ROOT / "public" / "nk_brush.css")),
 ])
+app.add_routes([
+    web.get('/echa', lambda request: web.FileResponse(ROOT / 'public' / 'echa.html')),
+    web.get('/echa.js', lambda request: web.FileResponse(ROOT / 'public' / 'echa.js')),
+    web.get('/echa.css', lambda request: web.FileResponse(ROOT / 'public' / 'echa.css')),
+])
+register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
 app.cleanup_ctx.append(task_ctx)
