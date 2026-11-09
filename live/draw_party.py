@@ -1,5 +1,5 @@
 """Drawing party modes: a hidden-target drawing challenge and a picture telephone."""
-import math,secrets
+import math,secrets,re
 
 GAME_IDS={'artguide','drawrelay'}
 EVENTS={'art_target','art_hints','art_submit','art_pick','art_force','art_next','relay_seed','relay_draw','relay_caption','relay_next'}
@@ -9,7 +9,7 @@ def strokes(v):
     if not isinstance(v,list) or not 1<=len(v)<=90:raise ValueError('1〜90本の線を描いてください')
     out=[];total=0
     for s in v:
-        if not isinstance(s,dict) or s.get('c') not in COLORS or type(s.get('w')) not in (int,float) or not 1<=s['w']<=17:raise ValueError('線の設定が不正です')
+        if not isinstance(s,dict) or not isinstance(s.get('c'),str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',s['c']) or type(s.get('w')) not in (int,float) or not math.isfinite(s['w']) or not 1<=s['w']<=17:raise ValueError('線の設定が不正です')
         points=s.get('p')
         if not isinstance(points,list) or not 1<=len(points)<=90:raise ValueError('線の座標が不正です')
         coords=[]
@@ -18,7 +18,9 @@ def strokes(v):
             coords.append([round(xy[0],4),round(xy[1],4)])
         total+=len(coords)
         if total>2500:raise ValueError('線が多すぎます')
-        out.append({'c':s['c'],'w':int(s['w']),'p':coords})
+        alpha=s.get('a',1);layer=s.get('layer',0)
+        if type(alpha) not in (int,float) or not math.isfinite(alpha) or not 0.01<=alpha<=1 or type(layer) is not int or not 0<=layer<=5:raise ValueError('透明度・レイヤー設定が不正です')
+        out.append({'c':s['c'].lower(),'w':int(s['w']),'p':coords,'a':round(alpha,3),'layer':layer})
     return out
 def fresh_guide(r):
     p=r['draw'];p['guide']=r['active'][p['round']%len(r['active'])]
