@@ -7,7 +7,19 @@ const moreAct = (text,fn,kind='')=>action(text,fn,kind);
 const moreName = id=>room.players.find(p=>p.id===id)?.name||'参加者';
 const moreStatus = p=>`<div class="more-round"><span>${esc(GAMES[room.game]?.icon||'🎲')} ${esc(GAMES[room.game]?.title||'')}</span><strong>ROUND ${p.round+1} / ${p.roundLimit}</strong></div>`;
 const moreScores=()=>`<div class="more-scores">${[...room.players].sort((a,b)=>b.score-a.score).map(p=>`<span class="more-score">${esc(p.emoji||'🌷')} ${esc(p.name)} <b>${p.score}pt</b></span>`).join('')}</div>`;
-const moreTitle=(sub,title,html)=>{app.innerHTML=panel(sub,title,roomBar()+moreStatus(room.more)+html+'<p id="err" class="error" hidden></p>');};
+const moreTitle=(sub,title,html)=>{
+ app.innerHTML=panel(sub,title,roomBar()+moreStatus(room.more)+html+'<p id="err" class="error" hidden></p>');
+ if(room.game==='drawfake'){
+  const canvas=document.getElementById('draw-svg');
+  if(canvas){
+   const state={strokes:[],repaint:drawPreview};
+   NKMBrush.bindPinch(canvas,state,()=>{
+    moreDrawing=false;moreDrawPoints=[];drawPreview()
+   });
+   canvas.parentNode.style.aspectRatio='1000 / 660'
+  }
+ }
+};
 const moreNext=()=>room.owner===me?moreAct('次のラウンドへ →',`send({type:'${room.game==='describe'?'desc_next':room.game==='drawfake'?'draw_next':'mail_next'}'})`,'gold'):'<p class="info">主催者が次のラウンドへ進めます。</p>';
 function renderMore(){if(!room||!MORE_GAMES.includes(room.game))return;
  if(room.phase==='final')return renderMoreFinal();
