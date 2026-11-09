@@ -53,7 +53,7 @@ def snapshot(r,pid):
  players=[{'id':x,'name':player(r,x),'score':r['points'].get(x,0),'online':bool(v['ws'] and not v['ws'].closed),'avatar':v.get('avatar',''),'emoji':v.get('emoji','🌷')} for x,v in r['players'].items()]
  d={'round':p['round'],'roundLimit':p['roundLimit'],'last':p.get('last') if phase in ('mx_reveal','co_reveal','rv_reveal','final') else None,'history':p['history'] if phase=='final' else []}
  if g=='artmix':
-  d.update(myPrompt=p['prompts'].get(pid) if phase=='mx_draw' else None,submitted=pid in p['drawings'] if phase=='mx_draw' else pid in p['captions'],submittedCount=len(p['drawings']) if phase=='mx_draw' else len(p['captions']),needed=len(a),myVote=pid in p['votes'],votesCount=len(p['votes']),combos=[{'key':x['key'],'caption':x['caption'],'strokes':x['strokes'],'mine':pid in (x['artist'],x['writer'])} for x in p['combos']] if phase=='mx_vote' else [])
+  d.update(myPrompt=p['prompts'].get(pid) if phase=='mx_draw' else None,submitted=pid in p['drawings'] if phase=='mx_draw' else pid in p['captions'],submittedCount=len(p['drawings']) if phase=='mx_draw' else len(p['captions']),needed=len(a),myVote=pid in p['votes'],votesCount=len(p['votes']),combos=[{'key':x['key'],'caption':x['caption'],'strokes':x['strokes'],'mine':pid==x['artist'] or (len(a)>3 and pid==x['writer'])} for x in p['combos']] if phase=='mx_vote' else [])
  elif g=='artcollab':
   turn=a[p['turn']] if phase=='co_turn' and p['turn']<len(a) else None
   d.update(topic=p['topic'],canvas=p['canvas'],turn=turn,turnName=player(r,turn) if turn else '',turnCount=p['turn'],needed=len(a),myMission=p['missions'][pid] if turn==pid else None)
@@ -77,7 +77,7 @@ def handle(r,pid,t,obj,host):
  elif t=='mx_vote':
   if g!='artmix' or phase!='mx_vote' or pid in p['votes']:raise ValueError('今は投票できません')
   c=next((x for x in p['combos'] if x['key']==obj.get('key')),None)
-  if not c or pid in (c['artist'],c['writer']):raise ValueError('自分の作品には投票できません')
+  if not c or pid==c['artist'] or (len(a)>3 and pid==c['writer']):raise ValueError('自分の作品には投票できません')
   p['votes'][pid]=c['key']
   if len(p['votes'])==len(a):end_mix(r)
  elif t=='mx_force':
