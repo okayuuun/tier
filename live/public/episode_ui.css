@@ -1,0 +1,24 @@
+/* Anonymous story guessing game */
+.ep-progress{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:#fff4f9;padding:12px 15px;border:1px solid #eed2e3;border-radius:12px;margin:12px 0 18px}
+.ep-progress b{color:#a72b78;white-space:nowrap}.ep-progress span{font-weight:750;line-height:1.6}
+.ep-callout{background:linear-gradient(120deg,#fff0fa,#fff8df);border:1px solid #efcee0;padding:18px 19px;border-radius:14px;font-weight:750;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0}
+.ep-guide{border-left:4px solid #e9b4d2;background:#fff8fc;border-radius:9px;padding:14px;line-height:1.7;font-size:13px;margin:16px 0}
+.ep-meter{display:inline-block;border-radius:25px;background:#ffdbef;color:#9b296e;padding:7px 15px;margin:11px 0;font-weight:900}
+.ep-done{background:#eaf6ef;border:1px solid #bde3c7;padding:18px;border-radius:13px;font-weight:800;line-height:1.75}
+.ep-textarea{display:block;width:100%;min-height:190px;resize:vertical;line-height:1.8;padding:14px!important}
+.ep-guess-list,.ep-reveal{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:14px;margin:18px 0}
+.ep-story-card{border:1px solid #eec8dc;border-radius:16px;background:#fff;box-shadow:0 9px 25px #9c487218;min-width:0;overflow:hidden}
+.ep-card-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:#fff3f9;padding:13px 15px}
+.ep-anon{background:#e94da0;border-radius:9px;color:#fff;font-size:11px;letter-spacing:.08em;padding:6px 10px;font-weight:900}
+.ep-own{color:#9e4778;background:#fff9d9;border:1px solid #ebd18b;border-radius:7px;padding:5px 9px;font-weight:800;font-size:12px}
+.ep-story-text{padding:16px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;font-size:15px;min-height:110px}
+.ep-guess-list label{padding:0 15px}.ep-guess-list select{margin:0 15px 15px;width:calc(100% - 30px)}
+.ep-guess-list .small{padding:10px 15px}
+.ep-guesses{border-top:1px dashed #ead6e1;padding:12px 15px;display:flex;flex-wrap:wrap;gap:8px}
+.ep-guess-chip{padding:6px 10px;border-radius:22px;font-size:12px;font-weight:750}
+.ep-guess-chip.correct{background:#dcf4e1;color:#286a3a}.ep-guess-chip.wrong{background:#fff1ed;color:#963947}
+.ep-board{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}
+.ep-score{border-radius:12px;background:#fff4fa;border:1px solid #f0d2e3;padding:13px;display:flex;justify-content:space-between;gap:7px}
+.ep-score strong{color:#a92b79}.ep-history{margin:12px 0;background:#fff;border:1px solid #ead2df;border-radius:12px;padding:12px}
+.ep-history summary{font-weight:800;cursor:pointer}
+@media(max-width:520px){.ep-guess-list,.ep-reveal{grid-template-columns:1fr}.ep-card-head{padding:10px}.ep-story-text{padding:13px;min-height:0}}
