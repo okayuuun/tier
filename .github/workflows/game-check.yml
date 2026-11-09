@@ -43,6 +43,8 @@ jobs:
         run: node live/test_profile_maker.js
       - name: Test echa bucket flood-fill and color tolerance
         run: node live/test_echa_fill.js
+      - name: Test echa bucket rendering with separate lineart and color layers
+        run: node live/test_echa_bucket_render.js
       - name: Test echa client layer compositing and timelapse
         run: node live/test_echa_client.js
       - name: Test multiplayer player count filters
