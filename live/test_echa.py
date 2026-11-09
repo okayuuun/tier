@@ -67,6 +67,54 @@ async def main():
         await one.send_json({'type':'clear'})
         await take_type(one,'clear')
         await take_type(two,'clear')
+        # Shared layer changes must broadcast to both clients.
+        assert len(first['layers'])==1 and first['layers'][0]['id']=='base'
+        await two.send_json({'type':'layer_op','op':'add'})
+        update1=await take_type(one,'layers')
+        update2=await take_type(two,'layers')
+        assert update1['layers']==update2['layers']
+        assert len(update1['layers'])==2
+        layer_id=update1['selected']
+        assert layer_id!='base'
+        await two.send_json({'type':'layer_op','op':'rename','id':layer_id,'name':'線画'})
+        await take_type(one,'layers')
+        await take_type(two,'layers')
+        assert ROOMS[code]['layers'][1]['name']=='線画'
+        await two.send_json({'type':'layer_op','op':'opacity','id':layer_id,'value':.45})
+        await take_type(one,'layers')
+        await take_type(two,'layers')
+        assert ROOMS[code]['layers'][1]['opacity']==.45
+        await one.send_json({'type':'layer_op','op':'visible','id':layer_id,'value':False})
+        await take_type(one,'layers')
+        await take_type(two,'layers')
+        await two.send_json({**stroke,'layer':layer_id})
+        denied=await take_type(two,'error')
+        assert '表示中' in denied['message']
+        await one.send_json({'type':'layer_op','op':'visible','id':layer_id,'value':True})
+        await take_type(one,'layers')
+        await take_type(two,'layers')
+        await two.send_json({**stroke,'layer':layer_id})
+        await take_type(one,'begin')
+        await two.send_json({'type':'end'})
+        completed=await take_type(one,'end')
+        await take_type(two,'end')
+        assert completed['stroke']['layer']==layer_id
+        assert len(ROOMS[code]['strokes'])==1
+        await two.send_json({'type':'layer_op','op':'move','id':layer_id,'direction':-1})
+        moved=await take_type(one,'layers')
+        await take_type(two,'layers')
+        assert moved['layers'][0]['id']==layer_id
+        await two.send_json({'type':'layer_op','op':'remove','id':layer_id})
+        denied=await take_type(two,'error')
+        assert '部屋作成者' in denied['message']
+        await one.send_json({'type':'layer_op','op':'remove','id':layer_id})
+        removed=await take_type(one,'layers')
+        await take_type(two,'layers')
+        assert removed['deleted']==layer_id and removed['strokes']==[]
+        assert len(ROOMS[code]['layers'])==1 and not ROOMS[code]['strokes']
+        await two.send_json({'type':'sync'})
+        latest=await take_type(two,'sync')
+        assert len(latest['layers'])==1
         await two.close()
         await one.close()
     assert style_of({'color':'#ffaa22','width':2,'opacity':.2,'tool':'eraser'})['tool']=='eraser'
@@ -75,6 +123,6 @@ async def main():
         try:f()
         except ValueError:pass
         else:raise AssertionError('invalid drawing input accepted')
-    print('PASS: live echa room create, owner, two artist strokes, broadcasts, chat, undo, clear and validation')
+    print('PASS: echa concurrent drawing, layer synchronization, visibility, opacity, moving, deletion, chat and host controls')
 
 asyncio.run(main())
