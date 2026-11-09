@@ -19,7 +19,7 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
@@ -28,6 +28,7 @@ LABELS = {
     "senryu": "昼ドラ川柳", "tanka": "５７５７７（ゴーシチゴーシチシチ）", "booktitle": "横暴編集長",
     "artguide": "こっそり絵の指示書", "drawrelay": "お絵描き伝言リレー",
     "artcontest": "お絵描き作品コンテスト", "artforbid": "NGお絵描き", "drawbluff": "絵のタイトル当て",
+    "invent": "発明プレゼン大会", "chardesign": "キャラクターデザイン依頼",
     "artmix": "イラスト×セリフ大合体", "artcollab": "合作お絵描き", "reverseart": "逆お絵描きクイズ",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
@@ -54,6 +55,8 @@ ACTION_LABELS = {
     "mail_answer":"謎解きメールの解答", "mail_hint":"謎解きメールのヒント公開", "mail_next":"次の事件",
     "mx_draw":"絵を提出", "mx_caption":"セリフを提出", "mx_vote":"作品に投票", "mx_force":"組み合わせの途中集計", "mx_next":"次のラウンド",
     "co_topic":"合作のお題を設定", "co_submit":"線を描き足す", "co_skip":"手番をスキップ", "co_next":"合作の次のラウンド",
+    "inv_brief":"発明品のお題編集", "inv_publish":"発明品の出題開始", "inv_submit":"発明品を提出", "inv_vote":"発明品投票", "inv_force":"発明品の途中集計", "inv_next":"次の発明品ラウンド",
+    "char_brief":"デザイン条件編集", "char_publish":"デザインの募集開始", "char_submit":"キャラデザイン提出", "char_pick":"キャラデザイン採用", "char_force":"デザインの途中審査", "char_next":"次の依頼人",
     "rv_hint":"絵描きへヒント", "rv_draw":"逆お絵描きを提出", "rv_guess":"絵の正体を推理", "rv_judge":"推理の正誤判定", "rv_force":"途中判定", "rv_next":"次の絵描き"
 }
 
@@ -158,6 +161,9 @@ class MasterAdmin:
         elif room.get("word"):
             w=room["word"]
             details={"type":"word","format":w.get("format"),"round":w.get("round"),"rounds":w.get("history",[])}
+        elif room.get("design"):
+            p = room["design"]
+            details = {"type":"design","mode":room.get("game"),"round":p.get("round"),"rounds":[{"round":x.get("round"),"brief":x.get("brief"),"winnerNames":[e.get("name") for e in x.get("entries",[]) if e.get("id") in (x.get("winners") or [x.get("winner")])],"entries":[{"name":e.get("name"),"product":e.get("product"),"character":e.get("character"),"votes":e.get("votes")} for e in x.get("entries",[])]} for x in p.get("history",[])]}
         elif room.get("drawmix"):
             p = room["drawmix"]
             details = {"type": "drawing", "rounds": p.get("history", []), "round": p.get("round"), "mode": room.get("game")}
