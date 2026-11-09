@@ -8,7 +8,7 @@ class Element {
  appendChild(child){child.parentNode=this;this.children.push(child);return child}
  append(...items){items.forEach(item=>this.appendChild(item))}
  insertBefore(child){return this.appendChild(child)}
- insertAdjacentElement(_,child){return this.appendChild(child)}
+ insertAdjacentElement(_,child){return this.parentNode?this.parentNode.appendChild(child):this.appendChild(child)}
  addEventListener(name,callback){(this.handlers[name]??=[]).push(callback)}
  setPointerCapture(){}
  getBoundingClientRect(){return {left:0,top:0,width:720,height:440}}
