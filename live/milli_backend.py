@@ -88,6 +88,7 @@ class MilliService:
         self.db.execute('INSERT INTO milli_forms(id,key_hash,created,expires,spec) VALUES(?,?,?,?,?)',
                         (ident,hashlib.sha256(key.encode()).hexdigest(),now,now+TTL,json.dumps(spec,ensure_ascii=False)))
         self.db.commit()
+        self.master.log_action({'code':ident,'game':'millishira'},'作成者','milli_publish','ミリしら共有セット公開')
         return web.json_response({'id':ident,'ownerKey':key,'expiresDays':30},headers={'Cache-Control':'no-store'})
 
     def get(self, ident):
@@ -128,6 +129,7 @@ class MilliService:
         self.db.execute('INSERT INTO milli_responses(form_id,created,player,answers) VALUES(?,?,?,?)',
                         (request.match_info['id'],now,name,json.dumps(saved,ensure_ascii=False)))
         self.db.commit()
+        self.master.log_action({'code':request.match_info['id'],'game':'millishira'},name,'milli_submit','ミリしら回答')
         return web.json_response({'ok':True,'receivedAt':now},headers={'Cache-Control':'no-store'})
 
     async def manage(self,request):
