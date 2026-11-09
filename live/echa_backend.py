@@ -152,7 +152,9 @@ async def create(request):
 
 
 async def route_ws(request):
-    ws=web.WebSocketResponse(heartbeat=25,max_msg_size=250000)
+    # Art-chat can rasterize large fills on mobile devices; leave time
+    # for their browser to answer protocol pings while app pings arrive.
+    ws=web.WebSocketResponse(heartbeat=60,max_msg_size=250000)
     await ws.prepare(request)
     room=None
     player_id=None
