@@ -25,9 +25,10 @@ const NKMBrush=(()=>{
  <div class="nkb-row">
   <label>レイヤーの透明度 <input type="range" min="0" max="100" value="${Math.round(l.opacity*100)}" oninput="NKMBrush.layerOpacity('${safe(key)}',this.value,this)"> <span>${Math.round(l.opacity*100)}%</span></label>
   <label>ペンの透明度 <input type="range" min="10" max="100" value="${Math.round(d.brushOpacity*100)}" oninput="NKMBrush.brushOpacity('${safe(key)}',this.value,this)"> <span>${Math.round(d.brushOpacity*100)}%</span></label>
+ <label>ペンの太さ <input type="range" min="1" max="17" value="${d.size||5}" oninput="NKMBrush.brushSize('${safe(key)}',this.value,this)"> <span>${d.size||5}px</span></label>
  </div>
  <div class="nkb-row"><label>好きな色 <input type="color" value="${/^#[0-9a-f]{6}$/i.test(d.color)?d.color:'#4c375e'}" onchange="NKMBrush.color('${safe(key)}',this.value)"></label>
- <button type="button" onclick="NKMBrush.saveSwatch('${safe(key)}')">＋ 色をパレットに保存</button>${swatches}
+ <button type="button" onclick="NKMBrush.saveSwatch('${safe(key)}')">＋ 色をパレットに保存</button><button type="button" onclick="NKMBrush.removeSwatch('${safe(key)}')">選択色を削除</button>${swatches}
  <button type="button" onclick="NKMBrush.erase('${safe(key)}')">このレイヤーを全消去</button></div>
  <div class="nkb-row"><small>線消しゴムは触れた線を1本ずつ削除します。スポイトは絵の色を取得。保存した色はこのブラウザ内で共有します。</small></div></section>`
 }
@@ -47,6 +48,19 @@ const NKMBrush=(()=>{
  const v=storedSwatches().filter(c=>c.toLowerCase()!==d.color.toLowerCase());v.push(d.color.toLowerCase());
  try{localStorage.setItem('nakami_paint_swatches_v1',JSON.stringify(v.slice(-12)))}catch(_){alert('パレットを保存できませんでした')}
  render()
+}
+ function removeSwatch(key){
+ const d=states[key];if(!d)return;
+ const colors=storedSwatches(),i=colors.indexOf(String(d.color||'').toLowerCase());
+ if(i<0)return alert('選択中の色は保存されていません');
+ colors.splice(i,1);
+ try{localStorage.setItem('nakami_paint_swatches_v1',JSON.stringify(colors))}catch(_){return alert('パレットの変更に失敗しました')}
+ render()
+}
+ function brushSize(key,v,el){
+ const d=states[key];if(!d)return;
+ d.size=Math.max(1,Math.min(17,Number(v)||5));
+ if(el)el.nextElementSibling.textContent=d.size+'px'
 }
  function tool(key,mode){
  const d=states[key];if(!d||!['pen','eraser','picker'].includes(mode))return;
@@ -107,5 +121,5 @@ const NKMBrush=(()=>{
  function newStroke(d,p){prepare(d);return {c:d.color,w:d.size||5,p:[p],layer:d.layerIndex,a:d.brushOpacity}}
  function undo(d){prepare(d);for(let i=d.strokes.length-1;i>=0;i--){if((d.strokes[i].layer??0)===d.layerIndex){d.strokes.splice(i,1);return}}}
  function exportStrokes(d){return ordered(d.strokes,d).filter(s=>s.a>=0.01).map(s=>({c:s.c,w:s.w,p:s.p,layer:s.layer??0,a:s.a??1}))}
- return {panel,prepare,ordered,newStroke,undo,exportStrokes,choose,add,visibility,layerOpacity,brushOpacity,color,erase,storedSwatches,saveSwatch,tool,move,eraseAt,interact,savePNG};
+ return {panel,prepare,ordered,newStroke,undo,exportStrokes,choose,add,visibility,layerOpacity,brushOpacity,color,erase,storedSwatches,saveSwatch,removeSwatch,brushSize,tool,move,eraseAt,interact,savePNG};
 })();
