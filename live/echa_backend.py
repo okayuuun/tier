@@ -18,6 +18,8 @@ MAX_STROKES = 1600
 MAX_LAYERS = 8
 MAX_POINTS = 320
 MAX_MESSAGES = 65
+MAX_FILLS = 120  # expensive pixel operations; cap per room
+FILL_COOLDOWN = 0.65  # seconds, per participant
 ROOM_TTL = 6 * 3600
 STYLE_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
 
@@ -138,6 +140,7 @@ def new_room():
     ROOMS[code]={'code':code,'ownerKey':token,'members':{},'strokes':[],
                  'drawing':{},'messages':[], 'last':time.time(),'version':0,
                  'layers':[new_layer('base','レイヤー 1')], 'layerSeq':1,
+                 'fillLast':{},
                  'created':time.time()}
     return code,token
 
@@ -226,6 +229,40 @@ async def route_ws(request):
                         room['strokes'].append(stroke)
                         room['version']+=1
                         await notify(room,{'type':'end','stroke':stroke,'version':room['version']})
+                elif action=='fill':
+                    # Bucket fills are atomic history entries, like completed
+                    # pen strokes. Every viewer replays the same bounded seed
+                    # and tolerance, so undo, PNG and timelapse stay in sync.
+                    if len(room['strokes']) >= MAX_STROKES:
+                        raise ValueError('描画の上限に達しました')
+                    if player_id in room['drawing']:
+                        raise ValueError('線を描き終えてから塗りつぶしてください')
+                    if sum(s.get('tool')=='fill' for s in room['strokes']) >= MAX_FILLS:
+                        raise ValueError('この部屋の塗りつぶし上限に達しました')
+                    point=clean_point(data.get('point'))
+                    props=style_of({**data,'tool':'pen','width':1})
+                    tolerance=data.get('tolerance',15)
+                    reference=data.get('reference','all')
+                    layer_id=data.get('layer','base')
+                    if type(tolerance) is not int or not 0<=tolerance<=100:
+                        raise ValueError('許容値は0〜100の整数で指定してください')
+                    if reference not in ('all','layer'):
+                        raise ValueError('参照モードが不正です')
+                    layer=next((x for x in room['layers'] if x['id']==layer_id),None)
+                    if not layer or not layer['visible']:
+                        raise ValueError('表示中のレイヤーを選択してください')
+                    now=time.time()
+                    if now-room['fillLast'].get(player_id,0)<FILL_COOLDOWN:
+                        raise ValueError('連続した塗りつぶしは少し間を空けてください')
+                    room['fillLast'][player_id]=now
+                    item={'id':secrets.token_urlsafe(9),'by':player_id,'name':name,
+                          'layer':layer_id,'tool':'fill','point':point,
+                          'reference':reference,'tolerance':tolerance,
+                          'color':props['color'],'opacity':props['opacity'],
+                          'ts':now}
+                    room['strokes'].append(item)
+                    room['version']+=1
+                    await notify(room,{'type':'end','stroke':item,'version':room['version']})
                 elif action=='layer_op':
                     change=change_layer(room,member,data)
                     room['version']+=1
