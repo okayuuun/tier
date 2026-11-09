@@ -24,21 +24,19 @@ def validate_deck(game, obj):
 def new_round(room):
     p=room['word'];active=room['active'];bank=room.get('wordDeck') or DATA
     p['judge']=active[p['round']%len(active)] if room['game']=='senryu' else None
-    p.update(submitted={},votes={},last=None,hands={})
+    p.update(submitted={},votes={},last=None,hands={},prompt=secrets.choice(['禁断の恋','深夜の修羅場','忘れられない人','衝撃の告白','勘違い','再会した二人','愛とお金','盛大な言い訳','放課後の事件','恋するAI','猫だけが知る','最悪の旅行','深夜のカラオケ','気まずい同窓会','突然の勝負','ライバル','消えたお菓子','愛憎劇','夏祭りの夜','正体不明の人物']))
     if room['game']=='booktitle':
         for pid in active:p['hands'][pid]={'top':sample(bank['bookTop'],7),'bottom':sample(bank['bookBottom'],7)}
     else:
         for pid in active:
             if pid!=p['judge']:
-                p['hands'][pid]={'5':sample(bank['five'],max(7,p['format'].count(5)+2)),
-                                 '7':sample(bank['seven'],max(3,p['format'].count(7)+2))}
+                p['hands'][pid]={'5':sample(bank['five'],7), '7':sample(bank['seven'],5)}
     room['phase']='word_compose'
 def start(room):
     active=room['active'];game=room['game']
     if len(active)<(3 if game=='booktitle' else 2):
         raise ValueError('このゲームは'+('3人' if game=='booktitle' else '2人')+'以上必要です')
-    fmt=room.get('wordFormat') or ('57577' if game=='tanka' else '575')
-    room['word']={'round':0,'roundLimit':len(active),'format':parse_format(fmt),'history':[]}
+    room['word']={'round':0,'roundLimit':len(active),'format':None,'history':[]}
     new_round(room)
 def snapshot(room,pid):
     p=room['word'];phase=room['phase'];game=room['game']
@@ -52,7 +50,7 @@ def snapshot(room,pid):
               'score':room['points'].get(k,0),'avatar':v.get('avatar',''),'emoji':v.get('emoji','🌷')}
              for k,v in room['players'].items()]
     w={'round':p['round'],'roundLimit':p['roundLimit'],'format':p['format'],'judge':p['judge'],
-       'hand':p['hands'].get(pid,{}),'submitted':pid in p['submitted'],'submittedCount':len(p['submitted']),
+       'prompt':p.get('prompt',''),'hand':p['hands'].get(pid,{}),'submitted':pid in p['submitted'],'submittedCount':len(p['submitted']),
        'toSubmit':len(room['active'])-(1 if p['judge'] else 0),'entries':entries,'voteCount':len(p['votes']),
        'myVote':p['votes'].get(pid),'last':p['last'] if phase in ('word_reveal','final') else None,
        'history':p['history'] if phase=='final' else []}
@@ -88,9 +86,18 @@ def handle(room,pid,typ,obj,is_owner):
             data={'lines':[a,b],'text':a+b}
         else:
             arr=obj.get('lines')
-            if not isinstance(arr,list) or len(arr)!=len(p['format']):raise ValueError('型に合う句数にしてください')
-            used={5:collections.Counter(),7:collections.Counter()}
-            lines=[check_phrase(x,hand[str(n)],used[n]) for x,n in zip(arr,p['format'])]
+            if not isinstance(arr,list) or not 2<=len(arr)<=12:raise ValueError('好きな順番で2〜12枚の句を選んでください')
+            used={'5':collections.Counter(),'7':collections.Counter()}
+            lines=[]
+            for item in arr:
+                if not isinstance(item,dict):raise ValueError('句カードのデータが不正です')
+                kind=item.get('kind')
+                if item.get('free') is True:
+                    lines.append(check_phrase(item,[],collections.Counter()))
+                elif kind in ('5','7'):
+                    lines.append(check_phrase(item,hand[kind],used[kind]))
+                else:
+                    raise ValueError('句カードは5音・7音・自由入力から選んでください')
             data={'lines':lines,'text':'\n'.join(lines)}
         p['submitted'][pid]=data
         if len(p['submitted'])>=len(active)-(1 if judge else 0):
