@@ -136,8 +136,6 @@ def handle(r,pid,t,obj,host):
             if len(p["submissions"])==len(a):_shuffle(p);r["phase"]="inv_vote"
         elif t=="inv_vote":
             if phase!="inv_vote" or pid in p["votes"]:raise ValueError("今は投票できません")
-            target=obj.get("target")
-            if target not in p["submissions"] or target==pid:raise ValueError("自分の作品には投票できません")
             ratings=obj.get("ratings")
             if not isinstance(ratings,dict) or set(ratings)!=set(AXES) or any(x not in p["submissions"] or x==pid for x in ratings.values()):
                 raise ValueError("かわいさ・面白さ・独創性のすべてを、自分以外の作品から選んでください")
