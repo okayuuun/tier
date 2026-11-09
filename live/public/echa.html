@@ -2,9 +2,9 @@
 <html lang="ja">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#a967d5"><title>お絵描きチャット｜なかみくらべ。</title>
-<link rel="stylesheet" href="/echa.css?v=1"></head>
+<link rel="stylesheet" href="/echa.css?v=2"></head>
 <body>
-<header class="ec-header"><a href="/">♡ なかみくらべ。</a><strong>🎨 みんなの絵チャ</strong><div class="ec-status" id="ec-status">未接続</div></header>
+<header class="ec-header"><a href="/">♡ なかみくらべ。</a><strong>🎨 みんなの絵チャ</strong><div class="ec-row ec-header-nav"><a class="ec-header-link" href="/" target="_blank" rel="noopener">🎮 他のゲームを別タブで遊ぶ</a><a class="ec-header-link" href="/">ゲーム一覧へ戻る</a></div><div class="ec-status" id="ec-status">未接続</div></header>
 <main>
 <section id="ec-join" class="ec-join">
  <div class="ec-hero"><span>EVERYONE DRAW TOGETHER</span><h1>お絵描きチャット</h1><p>広いキャンバスで、友達と同時に描こう！描いた線はリアルタイムで共有。完成した絵を全体保存、制作過程をタイムラプスで楽しめます。</p></div>
@@ -20,7 +20,7 @@
 <section id="ec-room" class="ec-room" hidden>
  <div class="ec-topbar">
    <div><strong>ROOM <span id="ec-room-code"></span></strong><span class="ec-small" id="ec-members-count"></span></div>
-   <div class="ec-row"><button id="ec-copy">🔗 招待リンクをコピー</button><button id="ec-rejoin">↻ 再接続</button><button id="ec-fit">全体表示</button><button id="ec-export" class="ec-primary">🖼️ 全体をPNG保存</button><button id="ec-timelapse">🎞️ タイムラプス</button></div>
+   <div class="ec-row"><a class="ec-return-link" href="/" title="部屋のURLはトップページからもう一度開けます">🎲 ゲーム一覧へ</a><button id="ec-copy">🔗 招待リンクをコピー</button><button id="ec-rejoin">↻ 再接続</button><button id="ec-fit">全体表示</button><button id="ec-export" class="ec-primary">🖼️ 全体をPNG保存</button><button id="ec-timelapse">🎞️ タイムラプス</button></div>
  </div>
  <div class="ec-tools">
    <button data-tool="pen" class="ec-tool is-selected">✏️ ペン</button><button data-tool="eraser" class="ec-tool">🧽 消しゴム</button>
@@ -45,6 +45,11 @@
      </div>
    </div>
    <aside class="ec-side">
+     <section class="ec-layer-panel" aria-label="共有レイヤー管理"><div class="ec-layer-header"><h2>🗂️ 共有レイヤー <span id="ec-layer-count">1 / 8</span></h2><button id="ec-layer-add" type="button">＋ 追加</button></div>
+       <p class="ec-small">レイヤーを選んで描くと、ほかの人の絵を消さずに重ねられます。名前・順番・表示・透明度は全員に反映されます。</p>
+       <div id="ec-layers" class="ec-layer-list"></div><p class="ec-small" id="ec-layer-selected">選択中：レイヤー 1</p>
+       <p class="ec-small">削除は主催者のみ。消しゴムは選択中のレイヤーだけに作用します。</p>
+     </section>
      <details open><summary>👥 参加者</summary><div id="ec-members" class="ec-members"></div></details>
      <div class="ec-chat"><h2>💬 お絵描きチャット</h2><div id="ec-chat-log" class="ec-chat-log" aria-live="polite"></div>
        <form id="ec-chat-form"><textarea id="ec-chat-text" maxlength="280" rows="2" placeholder="ひとことメッセージ（280文字まで）"></textarea><button type="submit" class="ec-primary">送信</button></form>
@@ -63,6 +68,6 @@
   </div>
 </div>
 </main>
-<script src="/echa.js?v=1" defer></script>
+<script src="/echa.js?v=2" defer></script>
 </body>
 </html>
