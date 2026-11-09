@@ -1,102 +1,38 @@
-"""ミリしら private-link forms, optionally stored in a dedicated durable PostgreSQL DB.
-
-MILLI_DATABASE_URL enables PostgreSQL just for forms, answers and votes;
-the real-time rooms and master audit may still use ephemeral SQLite.
-Official character facts are never returned via the guessing API.
+"""ミリしら：private-link character questionnaires, backed by the master's SQLite DB.
+No canonical character spoilers are stored or returned to respondents.
 """
 import hashlib
 import hmac
 import json
-import os
 import re
 import random
 import secrets
 import time
 from aiohttp import web
 
-DEFAULT_TTL_DAYS = 30
+TTL = 30 * 86400
 MAX_FORMS = 80
 MAX_RESPONSES = 150
 MAX_BODY = 750000
 IMAGE_PATTERN = re.compile(r'^data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$')
 
-def env_positive_integer(name, default, maximum):
-    """Read a bounded positive env var without accepting invalid or huge retention."""
-    raw = os.getenv(name, str(default))
-    try:
-        n = int(raw)
-    except ValueError as exc:
-        raise ValueError(f'{name} は数字で設定してください') from exc
-    if not 1 <= n <= maximum:
-        raise ValueError(f'{name} は1〜{maximum}の範囲で設定してください')
-    return n
-
-
-class PostgresMilliStore:
-    """Minimal psycopg adapter for the subset of SQLite queries used by MilliService.
-
-    Autocommit is intentional: each SQL statement is independently durable and
-    existing .commit() calls stay compatible with the SQLite fallback.
-    """
-    def __init__(self, url):
-        import psycopg
-        from psycopg.rows import dict_row
-        if not url.startswith(('postgresql://', 'postgres://')):
-            raise ValueError('MILLI_DATABASE_URL はPostgreSQL接続URLを指定してください')
-        self._driver = psycopg
-        self._url = url
-        self._options = {'row_factory': dict_row, 'autocommit': True,
-                         'connect_timeout': 10, 'sslmode': 'require'}
-        self.connection = self._driver.connect(self._url, **self._options)
-
-    def execute(self, query, values=()):
-        sql = query.replace('?', '%s')
-        try:
-            return self.connection.execute(sql, values)
-        except (self._driver.OperationalError, self._driver.InterfaceError):
-            # Neon and other idle-scaled databases can close the TCP connection.
-            # Reconnect, but do NOT automatically repeat non-idempotent submissions.
-            self.connection = self._driver.connect(self._url, **self._options)
-            kind = query.lstrip().upper()
-            safe_to_retry = kind.startswith(('SELECT ', 'DELETE ', 'CREATE ', 'ALTER ', 'UPDATE ')) or kind.startswith('INSERT INTO MILLI_VOTES ')
-            if safe_to_retry:
-                return self.connection.execute(sql, values)
-            raise
-
-    def commit(self):
-        pass
-
-
 class MilliService:
     def __init__(self, master):
         self.master = master
-        self.persistent = bool(os.getenv('MILLI_DATABASE_URL', '').strip())
-        self.retention_days = env_positive_integer(
-            'MILLI_RETENTION_DAYS', 3650 if self.persistent else DEFAULT_TTL_DAYS, 36500)
-        self.max_forms = env_positive_integer(
-            'MILLI_MAX_FORMS', 1000 if self.persistent else MAX_FORMS, 100000)
-        self.db = PostgresMilliStore(os.environ['MILLI_DATABASE_URL']) if self.persistent else master.db
-        if self.persistent:
-            self.db.execute('CREATE TABLE IF NOT EXISTS milli_forms (id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, expires DOUBLE PRECISION NOT NULL, spec TEXT NOT NULL, gallery_enabled INTEGER NOT NULL DEFAULT 0)')
-            self.db.execute('CREATE TABLE IF NOT EXISTS milli_responses (id BIGSERIAL PRIMARY KEY, form_id TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, player TEXT NOT NULL, answers TEXT NOT NULL, showcase INTEGER NOT NULL DEFAULT 0, voter_hash TEXT NOT NULL DEFAULT \'\')')
-            # Add columns for databases created by older versions, without removing any data.
-            self.db.execute('ALTER TABLE milli_forms ADD COLUMN IF NOT EXISTS gallery_enabled INTEGER NOT NULL DEFAULT 0')
-            self.db.execute('ALTER TABLE milli_responses ADD COLUMN IF NOT EXISTS showcase INTEGER NOT NULL DEFAULT 0')
-            self.db.execute("ALTER TABLE milli_responses ADD COLUMN IF NOT EXISTS voter_hash TEXT NOT NULL DEFAULT ''")
-        else:
-            self.db.execute('CREATE TABLE IF NOT EXISTS milli_forms (id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, created REAL NOT NULL, expires REAL NOT NULL, spec TEXT NOT NULL)')
-            self.db.execute('CREATE TABLE IF NOT EXISTS milli_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, form_id TEXT NOT NULL, created REAL NOT NULL, player TEXT NOT NULL, answers TEXT NOT NULL)')
-            # Existing SQLite tables may predate the gallery update.
-            form_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_forms)')}
-            reply_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_responses)')}
-            if 'gallery_enabled' not in form_cols:
-                self.db.execute('ALTER TABLE milli_forms ADD COLUMN gallery_enabled INTEGER NOT NULL DEFAULT 0')
-            if 'showcase' not in reply_cols:
-                self.db.execute('ALTER TABLE milli_responses ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0')
-            if 'voter_hash' not in reply_cols:
-                self.db.execute('ALTER TABLE milli_responses ADD COLUMN voter_hash TEXT NOT NULL DEFAULT ""')
+        self.db = master.db
+        self.db.execute('CREATE TABLE IF NOT EXISTS milli_forms (id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, created REAL NOT NULL, expires REAL NOT NULL, spec TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS milli_responses (id INTEGER PRIMARY KEY AUTOINCREMENT, form_id TEXT NOT NULL, created REAL NOT NULL, player TEXT NOT NULL, answers TEXT NOT NULL)')
         self.db.execute('CREATE INDEX IF NOT EXISTS milli_response_form ON milli_responses(form_id,created)')
-        self.db.execute('CREATE TABLE IF NOT EXISTS milli_votes (form_id TEXT NOT NULL, voter_hash TEXT NOT NULL, response_id INTEGER NOT NULL, created DOUBLE PRECISION NOT NULL, PRIMARY KEY (form_id,voter_hash))')
+        # Existing deployments may already contain rows in both tables.
+        form_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_forms)')}
+        reply_cols={r['name'] for r in self.db.execute('PRAGMA table_info(milli_responses)')}
+        if 'gallery_enabled' not in form_cols:
+            self.db.execute('ALTER TABLE milli_forms ADD COLUMN gallery_enabled INTEGER NOT NULL DEFAULT 0')
+        if 'showcase' not in reply_cols:
+            self.db.execute('ALTER TABLE milli_responses ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0')
+        if 'voter_hash' not in reply_cols:
+            self.db.execute('ALTER TABLE milli_responses ADD COLUMN voter_hash TEXT NOT NULL DEFAULT ""')
+        self.db.execute('CREATE TABLE IF NOT EXISTS milli_votes (form_id TEXT NOT NULL, voter_hash TEXT NOT NULL, response_id INTEGER NOT NULL, created REAL NOT NULL, PRIMARY KEY (form_id,voter_hash))')
         self.db.commit()
 
     def check_published(self):
@@ -164,14 +100,14 @@ class MilliService:
         try: spec=self.validate(await request.json())
         except (ValueError,TypeError,json.JSONDecodeError) as exc:raise web.HTTPBadRequest(text=str(exc))
         self.clean()
-        num=self.db.execute('SELECT COUNT(*) AS n FROM milli_forms').fetchone()['n']
-        if num>=self.max_forms:raise web.HTTPTooManyRequests(text='共有セットの上限に達しています')
+        num=self.db.execute('SELECT COUNT(*) FROM milli_forms').fetchone()[0]
+        if num>=MAX_FORMS:raise web.HTTPTooManyRequests(text='共有セットの上限に達しています')
         ident=secrets.token_urlsafe(13);key=secrets.token_urlsafe(25);now=time.time()
         self.db.execute('INSERT INTO milli_forms(id,key_hash,created,expires,spec) VALUES(?,?,?,?,?)',
-                        (ident,hashlib.sha256(key.encode()).hexdigest(),now,now+self.retention_days*86400,json.dumps(spec,ensure_ascii=False)))
+                        (ident,hashlib.sha256(key.encode()).hexdigest(),now,now+TTL,json.dumps(spec,ensure_ascii=False)))
         self.db.commit()
         self.master.log_action({'code':ident,'game':'millishira'},'作成者','milli_publish','ミリしら共有セット公開')
-        return web.json_response({'id':ident,'ownerKey':key,'expiresDays':self.retention_days,'persistent':self.persistent},headers={'Cache-Control':'no-store'})
+        return web.json_response({'id':ident,'ownerKey':key,'expiresDays':30},headers={'Cache-Control':'no-store'})
 
     def get(self, ident):
         self.clean()
@@ -196,7 +132,6 @@ class MilliService:
         row=self.get(request.match_info['id'])
         return web.json_response({'spec':self.public_spec(json.loads(row['spec']),shuffle=True),
                                   'galleryEnabled':bool(row['gallery_enabled']),
-                                  'persistent':self.persistent,
                                   'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
 
     async def submit(self,request):
@@ -226,7 +161,7 @@ class MilliService:
             showcase=raw.get('showcase',False)
             if not isinstance(showcase,bool):raise ValueError('公開の同意設定が不正です')
         except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:raise web.HTTPBadRequest(text=str(exc))
-        n=self.db.execute('SELECT COUNT(*) AS n FROM milli_responses WHERE form_id=?',(request.match_info['id'],)).fetchone()['n']
+        n=self.db.execute('SELECT COUNT(*) FROM milli_responses WHERE form_id=?',(request.match_info['id'],)).fetchone()[0]
         if n>=MAX_RESPONSES:raise web.HTTPTooManyRequests(text='回答受付数の上限です')
         now=time.time()
         voter_token=secrets.token_urlsafe(24)
@@ -252,7 +187,7 @@ class MilliService:
                                   'galleryEnabled':bool(row['gallery_enabled']),
                                   'responses':[{'id':r['id'],'created':r['created'],'name':r['player'],
                                                 'showcase':bool(r['showcase']),'answers':json.loads(r['answers'])} for r in result],
-                                  'expiresAt':row['expires'],'persistent':self.persistent},headers={'Cache-Control':'no-store'})
+                                  'expiresAt':row['expires']},headers={'Cache-Control':'no-store'})
 
     async def gallery_toggle(self,request):
         self.check_published()
