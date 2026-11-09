@@ -140,7 +140,7 @@ def new_room():
     ROOMS[code]={'code':code,'ownerKey':token,'members':{},'strokes':[],
                  'drawing':{},'messages':[], 'last':time.time(),'version':0,
                  'layers':[new_layer('base','レイヤー 1')], 'layerSeq':1,
-                 'fillLast':{},
+                 'fillLast':{}, 'identities':{},
                  'created':time.time()}
     return code,token
 
@@ -155,7 +155,7 @@ async def route_ws(request):
     ws=web.WebSocketResponse(heartbeat=25,max_msg_size=250000)
     await ws.prepare(request)
     room=None
-    player_id=secrets.token_urlsafe(9)
+    player_id=None
     name=''
     try:
         async for msg in ws:
@@ -175,17 +175,47 @@ async def route_ws(request):
                     room=ROOMS.get(code)
                     if not room:
                         raise ValueError('部屋が見つかりません。再起動で消えた可能性があります')
-                    if len(room['members'])>=MAX_USERS:
-                        raise ValueError('部屋は12人までです')
                     name=str(data.get('name','')).strip()[:24]
                     if not name:
                         raise ValueError('ニックネームを入力してください')
                     key=data.get('ownerKey','')
-                    is_owner=isinstance(key,str) and secrets.compare_digest(key,room['ownerKey'])
-                    room['members'][ws]={'id':player_id,'name':name,'color':'#'+secrets.token_hex(3),'owner':is_owner}
+                    has_owner_key=isinstance(key,str) and secrets.compare_digest(key,room['ownerKey'])
+                    candidate=data.get('resumeToken')
+                    if not isinstance(candidate,str) or len(candidate)>100:
+                        candidate=''
+                    identity=room['identities'].get(candidate)
+                    if identity:
+                        player_id=identity['id']
+                        # A reconnect never consumes an extra seat or loses the
+                        # ability to undo earlier strokes. Disconnect an old tab
+                        # with the same credential without revoking its identity.
+                        for previous, member in list(room['members'].items()):
+                            if member['id']==player_id and previous is not ws:
+                                room['members'].pop(previous,None)
+                                if player_id in room['drawing']:
+                                    unfinished=room['drawing'].pop(player_id)
+                                    room['strokes'].append(unfinished)
+                                    room['version']+=1
+                                    await notify(room,{'type':'end','stroke':unfinished,'version':room['version']})
+                                await previous.close(code=1000,message=b'replaced')
+                        identity['name']=name
+                        identity['owner']=identity['owner'] or has_owner_key
+                        resume_token=candidate
+                    else:
+                        if len(room['members'])>=MAX_USERS:
+                            raise ValueError('部屋は12人までです')
+                        if len(room['identities'])>=60:
+                            raise ValueError('参加履歴がいっぱいです。新しい部屋を作成してください')
+                        player_id=secrets.token_urlsafe(9)
+                        identity={'id':player_id,'name':name,
+                                  'color':'#'+secrets.token_hex(3),'owner':has_owner_key}
+                        resume_token=secrets.token_urlsafe(24)
+                        room['identities'][resume_token]=identity
+                    room['members'][ws]=identity
                     room['last']=time.time()
                     await ws.send_json({'type':'snapshot','code':code,'me':player_id,
-                        'owner':is_owner,'width':WIDTH,'height':HEIGHT,
+                        'resumeToken':resume_token,'owner':identity['owner'],
+                        'width':WIDTH,'height':HEIGHT,
                         'members':public_members(room),'strokes':room['strokes'],
                         'layers':room['layers'], 'maxLayers':MAX_LAYERS,
                         'drawing':list(room['drawing'].values()),'messages':room['messages'],
@@ -194,7 +224,9 @@ async def route_ws(request):
                     continue
                 room['last']=time.time()
                 member=room['members'][ws]
-                if action=='begin':
+                if action=='ping':
+                    await ws.send_json({'type':'pong','at':time.time()})
+                elif action=='begin':
                     if player_id in room['drawing']:
                         raise ValueError('すでに描画中です')
                     if len(room['strokes'])>=MAX_STROKES:
