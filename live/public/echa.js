@@ -243,7 +243,7 @@ function playbackDraw(n){
  const to=Math.max(0,Math.min(strokes.length,Math.floor(n)));
  if(to<tlDrawn)playbackReset();
  while(tlDrawn<to){stroke(tl,strokes[tlDrawn]);tlDrawn++}
- tlIndex=to;$('ec-timeline-range').value=to;$('ec-timeline-progress').textContent=to+' / '+strokes.length+'本'
+ tlIndex=n;$('ec-timeline-range').value=to;$('ec-timeline-progress').textContent=to+' / '+strokes.length+'本'
 }
 function stopPlayback(){
  tlPlaying=false;if(tlFrame)cancelAnimationFrame(tlFrame);tlFrame=null;
