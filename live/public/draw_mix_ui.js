@@ -6,20 +6,20 @@ function mixBtn(s,fn,style){return action(s,fn,style||'')}
 function mixPage(title,inner){app.innerHTML=panel('DRAW LAB / '+GAMES[room.game].title,title,roomBar()+inner+'<p id="err" class="error" hidden></p>')}
 function mixData(){let d=room.drawmix,k=[room.code,room.matchNo,room.game,d.round,room.phase,me].join(':');if(mixSketch.key!==k)mixSketch={key:k,strokes:[],color:'#4c375e',size:5};return mixSketch}
 function mixProgress(d,label){return '<div class="mx-progress"><b>ROUND '+(d.round+1)+' / '+d.roundLimit+'</b><span>'+esc(label||'')+'</span></div>'}
-function mixDrawLine(ctx,s){let a=s.p||[];if(!a.length)return;ctx.lineWidth=s.w;ctx.strokeStyle=s.c;ctx.fillStyle=s.c;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();a.forEach((p,i)=>{if(i)ctx.lineTo(p[0]*720,p[1]*440);else ctx.moveTo(p[0]*720,p[1]*440)});if(a.length===1){ctx.arc(a[0][0]*720,a[0][1]*440,s.w/2,0,Math.PI*2);ctx.fill()}else ctx.stroke()}
-function mixPad(){let d=mixData(),t='<div class="mx-pens">';drawColors.forEach(c=>{t+='<button class="dp-color '+(d.color===c?'active':'')+'" style="background:'+c+'" title="'+c+'" onclick="mixColor(\''+c+'\')"></button>'});t+=' <span>ペンの太さ</span>';[2,5,9].forEach(n=>{t+='<button class="mx-size '+(d.size===n?'on':'')+'" onclick="mixSize('+n+')">'+n+'</button>'});t+=mixBtn('1本戻す','mixUndo()','alt')+mixBtn('自分の線を消去','mixClear()','alt');return t+'</div><canvas id="mix-canvas" class="dp-canvas" width="720" height="440"></canvas><p class="small">指・マウス・ペンで描画できます。提出するまでは描き直せます。</p>'}
+function mixDrawLine(ctx,s){let a=s.p||[];if(!a.length)return;ctx.lineWidth=s.w;ctx.globalAlpha=s.a??1;ctx.strokeStyle=s.c;ctx.fillStyle=s.c;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();a.forEach((p,i)=>{if(i)ctx.lineTo(p[0]*720,p[1]*440);else ctx.moveTo(p[0]*720,p[1]*440)});if(a.length===1){ctx.arc(a[0][0]*720,a[0][1]*440,s.w/2,0,Math.PI*2);ctx.fill()}else ctx.stroke();ctx.globalAlpha=1}
+function mixPad(){let d=mixData(),t='<div class="mx-pens">';drawColors.forEach(c=>{t+='<button class="dp-color '+(d.color===c?'active':'')+'" style="background:'+c+'" title="'+c+'" onclick="mixColor(\''+c+'\')"></button>'});t+=' <span>ペンの太さ</span>';[2,5,9].forEach(n=>{t+='<button class="mx-size '+(d.size===n?'on':'')+'" onclick="mixSize('+n+')">'+n+'</button>'});t+=mixBtn('1本戻す','mixUndo()','alt')+mixBtn('自分の線を消去','mixClear()','alt');return t+'</div>'+NKMBrush.panel(d,'mix')+'<canvas id="mix-canvas" class="dp-canvas" width="720" height="440"></canvas><p class="small">指・マウス・ペンで描画できます。提出するまでは描き直せます。</p>'}
 function mixBind(base){const el=document.getElementById('mix-canvas');if(!el)return;let ctx=el.getContext('2d'),d=mixData();if(!ctx)return;let prev=base||[];
- function paint(){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,720,440);for(const s of prev)mixDrawLine(ctx,s);for(const s of d.strokes)mixDrawLine(ctx,s)}
+ function paint(){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,720,440);for(const s of NKMBrush.ordered(prev))mixDrawLine(ctx,s);for(const s of NKMBrush.ordered(d.strokes,d))mixDrawLine(ctx,s)}
  const pt=e=>{let r=el.getBoundingClientRect();return [+(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))).toFixed(4),+(Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))).toFixed(4)]};
  let pointer=null;
- el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();if(d.strokes.length>=85)return error('線は85本までです');pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_e){}d.strokes.push({c:d.color,w:d.size,p:[pt(e)]});paint()});
+ el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;e.preventDefault();if(d.strokes.length>=85)return error('線は85本までです');pointer=e.pointerId;try{el.setPointerCapture(pointer)}catch(_e){}d.strokes.push(NKMBrush.newStroke(d,pt(e)));paint()});
  el.addEventListener('pointermove',e=>{if(e.pointerId!==pointer)return;e.preventDefault();let s=d.strokes.at(-1),xy=pt(e);if(!s||s.p.length>=85||d.strokes.reduce((k,v)=>k+v.p.length,0)>2400)return;let last=s.p.at(-1);if(Math.abs(last[0]-xy[0])+Math.abs(last[1]-xy[1])>.003){s.p.push(xy);paint()}});
- ['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));paint()}
+ ['pointerup','pointercancel','lostpointercapture'].forEach(k=>el.addEventListener(k,e=>{if(pointer===e.pointerId)pointer=null}));d.repaint=paint;paint()}
 function mixColor(c){if(!drawColors.includes(c))return;mixData().color=c;render()}
 function mixSize(n){if(![2,5,9].includes(n))return;mixData().size=n;render()}
-function mixUndo(){mixData().strokes.pop();render()}
+function mixUndo(){NKMBrush.undo(mixData());render()}
 function mixClear(){if(mixData().strokes.length&&!confirm('自分が描いた線を全部消しますか？'))return;mixData().strokes=[];render()}
-function mixSendPicture(type){if(!mixData().strokes.length)return error('まず絵を描いてください');send({type,strokes:mixData().strokes})}
+function mixSendPicture(type){const strokes=NKMBrush.exportStrokes(mixData());if(!strokes.length)return error('まず絵を描いてください');send({type,strokes})}
 function mixInput(type,id,min){let v=(document.getElementById(id)?.value||'').trim();mixDraftText=v;if(v.length<(min||2))return error('入力が短すぎます');send({type,text:v})}
 function mixScores(){return '<div class="mx-scores">'+[...room.players].sort((a,b)=>b.score-a.score).map((p,i)=>'<div><span>'+(i+1)+'位 '+esc(p.name)+'</span><b>'+p.score+'pt</b></div>').join('')+'</div>'}
 function mixArtwork(strokes){return drawPicture(strokes||[])}
