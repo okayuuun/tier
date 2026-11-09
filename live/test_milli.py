@@ -2,9 +2,13 @@
 import asyncio
 import json
 import sqlite3
+import os
+import sys
+from types import ModuleType
+from unittest.mock import patch
 from aiohttp import web
 from aiohttp.test_utils import TestClient,TestServer
-from milli_backend import MilliService
+from milli_backend import MilliService, PostgresMilliStore, env_positive_integer
 from draw_party import strokes
 class MockMaster:
  def __init__(self):
@@ -90,10 +94,52 @@ async def main():
   r=await client.post('/api/milli/'+fid+'/gallery-toggle',json={'ownerKey':owner,'enabled':False})
   assert r.status==200
   assert (await client.get('/api/milli/'+fid+'/gallery')).status==403
+ # PostgreSQL backend adapter is tested without external credentials.
+ assert env_positive_integer('MILLI_RETENTION_DAYS',3650,36500)>=1
+ with patch.dict(os.environ,{'MILLI_RETENTION_DAYS':'0'}):
+  try:env_positive_integer('MILLI_RETENTION_DAYS',3650,36500)
+  except ValueError:pass
+  else:raise AssertionError('invalid retention allowed')
+ class DeadDatabase(Exception):pass
+ class InvalidConnection(Exception):pass
+ class FakeConnection:
+  def __init__(self):self.fail=False;self.queries=[]
+  def execute(self,sql,values):
+   if self.fail:
+    self.fail=False
+    raise DeadDatabase('stale database socket')
+   self.queries.append((sql,values))
+   return self
+ class FakeDriver(ModuleType):pass
+ fake=FakeDriver('psycopg')
+ fake.OperationalError=DeadDatabase
+ fake.InterfaceError=InvalidConnection
+ connections=[]
+ def fake_connect(url,**kwargs):
+  assert url.startswith('postgresql://') and kwargs['sslmode']=='require'
+  assert kwargs['autocommit'] is True
+  c=FakeConnection()
+  connections.append(c)
+  return c
+ fake.connect=fake_connect
+ rows=ModuleType('psycopg.rows')
+ rows.dict_row=lambda cursor:None
+ with patch.dict(sys.modules,{'psycopg':fake,'psycopg.rows':rows}):
+  store=PostgresMilliStore('postgresql://user:secret@database.test/db')
+  store.execute('SELECT ? AS n',(7,))
+  assert connections[0].queries[-1]==('SELECT %s AS n',(7,))
+  connections[0].fail=True
+  store.execute('SELECT ? AS n',(8,))
+  assert len(connections)==2 and connections[1].queries[-1]==('SELECT %s AS n',(8,))
+  connections[1].fail=True
+  try:store.execute('INSERT INTO milli_responses(id) VALUES (?)',(10,))
+  except DeadDatabase:pass
+  else:raise AssertionError('non-idempotent write was retried')
+  assert len(connections)==3 and connections[2].queries==[]
  custom=strokes([{'c':'#12abEF','a':0.35,'layer':2,'w':7,'p':[[0.1,0.1],[0.4,0.4]]}])
  assert custom[0]['a']==.35 and custom[0]['layer']==2 and custom[0]['c']=='#12abef'
  try:strokes([{'c':'red','a':1,'layer':0,'w':5,'p':[[.2,.2]]}])
  except ValueError:pass
  else:raise AssertionError('unsafe color accepted')
- print('PASS: millishira random, spoiler privacy, consented gallery, voting, author access and drawing validation')
+ print('PASS: millishira spoiler privacy, gallery, votes, PostgreSQL adapter, SSL, reconnect and SQLite fallback')
 asyncio.run(main())
