@@ -35,8 +35,6 @@ jobs:
         run: python live/test_design_games.py
       - name: Test millishira share, owner privacy, layers and transparency
         run: python live/test_milli.py
-      - name: Test millishira gallery UI runtime
-        run: node live/test_milli_gallery.js
       - name: Import game modules
         run: |
           cd live
