@@ -193,18 +193,38 @@ function stroke(ctx2,s){
  }else ctx2.stroke();
  ctx2.restore()
 }
-function redraw(){
- ctx.clearRect(0,0,WIDTH,HEIGHT);
- for(const s of strokes)stroke(ctx,s);
- updateCount()
+function sceneScratch(w,h){
+ const key=w+'x'+h;
+ let canvas=paintScratch.get(key);
+ if(!canvas){canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;paintScratch.set(key,canvas)}
+ return canvas
 }
+/* Composite ink from bottom-to-top. Erasing happens inside each independent
+   transparent layer, never against another person's layer. Works identically
+   for the live canvas, whole-canvas PNG, and timelapse frames. */
+function composite(target,count=strokes.length,live=false){
+ const w=target.canvas.width,h=target.canvas.height,scratch=sceneScratch(w,h),sc=scratch.getContext('2d');
+ target.save();target.setTransform(1,0,0,1,0,0);
+ target.globalAlpha=1;target.globalCompositeOperation='source-over';
+ target.clearRect(0,0,w,h);target.fillStyle='#fff';target.fillRect(0,0,w,h);
+ for(const layer of layers){
+  if(!layer.visible||layer.opacity<=0)continue;
+  sc.save();sc.setTransform(1,0,0,1,0,0);sc.globalAlpha=1;sc.globalCompositeOperation='source-over';sc.clearRect(0,0,w,h);
+  sc.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);
+  for(let i=0;i<count;i++){
+   const s=strokes[i];if((s.layer||'base')===layer.id)stroke(sc,s)
+  }
+  if(live)for(const s of pending.values())if((s.layer||'base')===layer.id)stroke(sc,s);
+  sc.restore();
+  target.globalAlpha=layer.opacity;target.drawImage(scratch,0,0)
+ }
+ target.restore()
+}
+function redraw(){composite(ctx,strokes.length,true);updateCount()}
 function updateCount(){$('ec-strokes').textContent=strokes.length+'本'}
 function schedulePending(){
  if(drawingScheduled)return;drawingScheduled=true;
- requestAnimationFrame(()=>{
-  drawingScheduled=false;octx.clearRect(0,0,WIDTH,HEIGHT);
-  for(const s of pending.values())stroke(octx,s)
- })
+ requestAnimationFrame(()=>{drawingScheduled=false;redraw()})
 }
 function transform(){board.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.zoom+')';$('ec-zoom-label').textContent=Math.round(view.zoom*100)+'%'}
 function fit(){
@@ -288,24 +308,17 @@ function download(blob,filename){
 }
 $('ec-export').addEventListener('click',()=>{
  const target=document.createElement('canvas');target.width=WIDTH;target.height=HEIGHT;
- const cx=target.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,WIDTH,HEIGHT);
- // Draw over white *after* compositing: eraser reveals white instead of black.
- const merged=document.createElement('canvas');merged.width=WIDTH;merged.height=HEIGHT;
- const mx=merged.getContext('2d');for(const s of strokes)stroke(mx,s);
- cx.drawImage(merged,0,0);
+ composite(target.getContext('2d'),strokes.length,false);
  target.toBlob(blob=>blob?download(blob,'nakami-echa-'+code+'-full.png'):alertUI('PNG出力に失敗しました'),'image/png')
 });
 const modal=$('ec-timeline-modal'),tlCanvas=$('ec-timeline-canvas'),tl=tlCanvas.getContext('2d');
 let tlPlaying=false,tlFrame=null,tlIndex=0,tlDrawn=0,tlLast=0,tlRate=8,recorder=null,recordChunks=[];
 function playbackReset(){
- tl.setTransform(1,0,0,1,0,0);
- tl.clearRect(0,0,960,640);tl.fillStyle='#fff';tl.fillRect(0,0,960,640);
- tl.setTransform(960/WIDTH,0,0,640/HEIGHT,0,0);tlDrawn=0
+ tlDrawn=-1;composite(tl,0,false);tlDrawn=0
 }
 function playbackDraw(n){
  const to=Math.max(0,Math.min(strokes.length,Math.floor(n)));
- if(to<tlDrawn)playbackReset();
- while(tlDrawn<to){stroke(tl,strokes[tlDrawn]);tlDrawn++}
+ if(to!==tlDrawn){composite(tl,to,false);tlDrawn=to}
  tlIndex=n;$('ec-timeline-range').value=to;$('ec-timeline-progress').textContent=to+' / '+strokes.length+'本'
 }
 function stopPlayback(){
