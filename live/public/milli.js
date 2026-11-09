@@ -26,7 +26,7 @@ function updateField(i,j,key,value){const f=current?.characters[i]?.fields[j];if
 function updateOptions(i,j,s){const f=current?.characters[i]?.fields[j];if(f){f.options=s.split('\n').map(x=>x.trim()).filter(Boolean).slice(0,12);save()}}
 function addChar(){if(current.characters.length>=20)return message('キャラクターは20人までです','error');const c=newCharacter();c.label='キャラクター '+(current.characters.length+1);current.characters.push(c);active=current.characters.length-1;save();renderEdit()}
 function cloneChar(){const c=current.characters[active];if(!c)return;if(current.characters.length>=20)return message('20人までです','error');const d=JSON.parse(JSON.stringify(c));d.id=uid();d.label+='（複製）';d.fields.forEach(f=>f.id=uid());current.characters.splice(active+1,0,d);active++;save();renderEdit()}
-function removeChar(){if(current.characters.length<=1)return message('最低1キャラは必要です','error');if(!confirm('このキャラを削除しますか？'))return;current.characters.splice(active,1);active=Math.max(0,active-1);save();renderEdit()}
+function removeChar(){if(current.characters.length<=1)return message('最低1キャラは必要です','error');if(!confirm('このキャラを削除しますか？'))return;current.characters.splice(active,1);active=Math.max(0,active-1);if((current.randomCount||0)>current.characters.length)current.randomCount=current.characters.length;save();renderEdit()}
 function addField(){const c=current.characters[active];if(c.fields.length>=16)return message('1キャラの質問は16個までです','error');c.fields.push({id:uid(),label:'新しい質問',type:'short',options:[],truth:''});save();renderEdit()}
 function removeField(i){const c=current.characters[active];if(c.fields.length<=1)return message('最低1問は必要です','error');c.fields.splice(i,1);save();renderEdit()}
 function moveField(i,step){const c=current.characters[active],j=i+step;if(j<0||j>=c.fields.length)return;[c.fields[i],c.fields[j]]=[c.fields[j],c.fields[i]];save();renderEdit()}
@@ -119,6 +119,7 @@ async function toggleGallery(){
   resultData.galleryEnabled=d.galleryEnabled;renderResults()
  }catch(e){alert('展示会の公開設定を変更できませんでした：'+e.message)}
 }
+let galleryData=null,galleryId='';
 async function loadGallery(id){
  galleryId=id;mode='gallery';
  root.innerHTML=card('展示会を読み込んでいます','公開された回答を確認します…');
