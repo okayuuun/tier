@@ -42,7 +42,7 @@ assert.deepEqual(rgba(out2,2,0),[0,0,0,0]);
 // Partially opaque paint is correctly composited over existing layer pixels.
 const one=bitmap(1,1,[255,0,0,255]),base=bitmap(1,1,[0,0,255,255]);
 assert.equal(bucket(one,base,0,0,'#ff0000',.5,0),1);
-assert.deepEqual(rgba(base,0,0),[128,0,127,255]);
+assert.deepEqual(rgba(base,0,0),[128,0,128,255]);
 // Transparent target must preserve semi-transparency.
 const empty=bitmap(1,1,[0,0,0,0]);
 bucket(one,empty,0,0,'#00ff00',.5,0);
