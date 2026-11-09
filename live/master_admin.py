@@ -19,7 +19,7 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "millishira")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira")
 LABELS = {
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
     "quiz": "理解度チェック", "ito": "ito（クモノイト）", "akaito": "ito（アカイイト）",
@@ -29,6 +29,7 @@ LABELS = {
     "artguide": "こっそり絵の指示書", "drawrelay": "お絵描き伝言リレー",
     "artcontest": "お絵描き作品コンテスト", "artforbid": "NGお絵描き", "drawbluff": "絵のタイトル当て",
     "millishira": "キャラクター・ミリしら",
+    "episode": "誰のエピソード？",
     "invent": "発明プレゼン大会", "chardesign": "キャラクターデザイン依頼",
     "artmix": "イラスト×セリフ大合体", "artcollab": "合作お絵描き", "reverseart": "逆お絵描きクイズ",
     "unanimous": "全員一致ゲーム", "insider": "インサイダーゲーム", "secret_rank": "シークレットランキング",
@@ -36,6 +37,7 @@ LABELS = {
 }
 ACTION_LABELS = {
     "milli_publish":"ミリしら共有セット公開", "milli_submit":"ミリしら回答",
+    "ep_topic":"エピソードのお題設定", "ep_submit":"匿名エピソードの提出", "ep_guess":"投稿者の予想", "ep_force":"エピソードを先に進める", "ep_next":"次のお題",
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
     "example":"ランダム例題を取得", "topic":"お題提出", "answer":"秘密の正解を登録", "guess":"予想を提出",
     "next":"次のラウンド", "force":"スキップ・進行", "end":"ゲーム終了", "restart":"再プレイ",
