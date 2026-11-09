@@ -4,6 +4,8 @@
 const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
+let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,retryWanted=true,lastConnected=false,activeName='';
+const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 const paintScratch=new Map();
@@ -109,26 +111,95 @@ function joinRoom(){
 }
 $('ec-create').addEventListener('click',createRoom);
 $('ec-join-btn').addEventListener('click',joinRoom);
-function connectRoom(name){
- try{localStorage.setItem('nk_echa_name',name)}catch(_){}
- if(ws)ws.close();
- alertUI('接続しています…');
- const proto=location.protocol==='https:'?'wss:':'ws:';
- ws=new WebSocket(proto+'//'+location.host+'/api/echa/ws');
- const socket=ws;
- socket.onopen=()=>{if(ws===socket)send({type:'join',code,name,ownerKey})};
- socket.onmessage=ev=>{if(ws!==socket)return;try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e)}};
- socket.onclose=()=>{if(ws!==socket)return;alertUI('接続が切れました。再接続ボタンでキャンバスを同期できます')};
- socket.onerror=()=>{if(ws===socket)alertUI('ネットワークエラーが発生しました')};
+function resumeKey(){return 'nk_echa_resume_'+code}
+function stopNetworkTimers(){
+ clearTimeout(reconnectTimer);clearInterval(pingTimer);
+ reconnectTimer=null;pingTimer=null
 }
+function scheduleReconnect(){
+ if(!retryWanted||!code)return;
+ if(reconnectAttempt>=MAX_RECONNECTS){
+  alertUI('再接続が続けて失敗しました。「↻ 再接続」を押すか、ブラウザを再読み込みしてください。');
+  return
+ }
+ const delay=Math.min(20000,1200*Math.pow(2,Math.min(reconnectAttempt,4)));
+ reconnectAttempt++;
+ alertUI('通信が切断されました。'+Math.ceil(delay/1000)+'秒後に再接続（'+reconnectAttempt+'/'+MAX_RECONNECTS+'）');
+ clearTimeout(reconnectTimer);
+ reconnectTimer=setTimeout(()=>connectRoom(activeName||storedName()||'ゲスト',true),delay)
+}
+function connectRoom(name,isRetry=false){
+ activeName=name;
+ if(!isRetry){reconnectAttempt=0;retryWanted=true}
+ stopNetworkTimers();
+ try{localStorage.setItem('nk_echa_name',name)}catch(_){}
+ if(ws){
+  // Detach handlers BEFORE intentional replacement: its close must not
+  // accidentally initiate another reconnect or overwrite the new status.
+  ws.onclose=null;ws.onerror=null;ws.onmessage=null;
+  try{ws.close()}catch(_){}
+ }
+ alertUI(isRetry?'再接続しています…':'接続しています…');
+ const proto=location.protocol==='https:'?'wss:':'ws:';
+ const socket=new WebSocket(proto+'//'+location.host+'/api/echa/ws');
+ ws=socket;
+ socket.onopen=()=>{
+  if(ws!==socket)return;
+  let resumeToken='';
+  try{resumeToken=sessionStorage.getItem(resumeKey())||''}catch(_){}
+  socket.send(JSON.stringify({type:'join',code,name,ownerKey,resumeToken}))
+ };
+ socket.onmessage=ev=>{
+  if(ws!==socket)return;
+  try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e);alertUI('描画データの処理中にエラーが発生しました')}
+ };
+ socket.onclose=ev=>{
+  if(ws!==socket)return;
+  clearInterval(pingTimer);pingTimer=null;
+  scheduleReconnect()
+ };
+ socket.onerror=()=>{
+  if(ws===socket)alertUI('通信エラーが発生しました。接続を回復しています…')
+ }
+}
+window.addEventListener('pagehide',()=>{retryWanted=false;stopNetworkTimers()});
+window.addEventListener('online',()=>{
+ if(ws&&ws.readyState===WebSocket.OPEN)return;
+ if(retryWanted&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
+});
 function onMessage(d){
  if(d.type==='error'){
   alertUI(d.message);
+  if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
+   // A free Render service may restart and discard an in-memory room.
+   // Stop futile retries; old local artwork can still be saved as PNG.
+   retryWanted=false;stopNetworkTimers();
+   if(ws){ws.onclose=null;try{ws.close()}catch(_){}}
+   const text='前の絵チャの部屋がなくなりました。サーバー再起動などで消えた可能性があります。新しい部屋を作成してください。';
+   $('ec-join-error').textContent=text;
+   if(lastConnected){
+    $('ec-recovery').hidden=false;
+    $('ec-recovery-text').textContent=text+' 現在表示中の絵はPNGで保存できます。';
+   }else{$('ec-join').hidden=false;$('ec-room').hidden=true}
+   return
+  }
   if($('ec-join').hidden===false)$('ec-join-error').textContent=d.message;
   return
  }
+ if(d.type==='pong')return;
  if(d.type==='snapshot'){
   code=d.code;myId=d.me;owner=d.owner;
+  retryWanted=true;lastConnected=true;reconnectAttempt=0;stopNetworkTimers();
+  if(typeof d.resumeToken==='string'){
+   try{sessionStorage.setItem(resumeKey(),d.resumeToken)}catch(_){}
+  }
+  $('ec-recovery').hidden=true;
+  const current=ws;
+  pingTimer=setInterval(()=>{
+   if(ws===current&&current.readyState===WebSocket.OPEN){
+    current.send(JSON.stringify({type:'ping'}))
+   }
+  },20000);
   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
