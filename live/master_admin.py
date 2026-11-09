@@ -35,6 +35,7 @@ LABELS = {
     "describe": "カタカナーシ（Webアレンジ）", "drawfake": "エセ芸術家ニューヨークへ行く（Webアレンジ）", "mysterymail": "謎解きメール",
 }
 ACTION_LABELS = {
+    "milli_publish":"ミリしら共有セット公開", "milli_submit":"ミリしら回答",
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
     "example":"ランダム例題を取得", "topic":"お題提出", "answer":"秘密の正解を登録", "guess":"予想を提出",
     "next":"次のラウンド", "force":"スキップ・進行", "end":"ゲーム終了", "restart":"再プレイ",
