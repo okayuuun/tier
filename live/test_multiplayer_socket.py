@@ -39,6 +39,10 @@ async def main():
         ping=await asyncio.wait_for(second.receive_json(),5)
         assert ping['type']=='pong'
         await first.close()
+        await asyncio.sleep(.15)
+        print('DIAGNOSTIC player sockets after first close:',
+              [(x['name'], bool(x.get('ws')), x['ws'].closed if x.get('ws') else None)
+               for x in server.ROOMS[code]['players'].values()],flush=True)
         await state(second)
         resumed=await client.ws_connect('/ws')
         await resumed.send_json({'type':'join','code':code,
