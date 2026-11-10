@@ -20,7 +20,7 @@ from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as dra
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from episode_game import GAME_IDS as EPISODE_IDS, EVENTS as EPISODE_EVENTS, start as episode_start, snapshot as episode_snapshot, handle as episode_handle
-from room_store import store as ROOM_STORE, GAME_TTL
+from room_store import store as ROOM_STORE, GAME_TTL, GAME_RETENTION_HOURS, ART_RETENTION_HOURS
 from echa_backend import register as register_echa
 from milli_backend import MilliService
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
@@ -219,6 +219,9 @@ async def broadcast(room):
         try:
             state = room_snapshot(room, pid)
             state["room"]["publicGames"] = published
+            state["room"]["restoredAt"] = room.get("_restoredAt")
+            state["room"]["retentionHours"] = GAME_RETENTION_HOURS if ROOM_STORE.enabled else 2
+            state["room"]["persistence"] = ROOM_STORE.status
             state["room"]["wordFormat"] = room.get("wordFormat")
             state["room"]["wordDeckLoaded"] = bool(room.get("wordDeck"))
             recipients.append((player, socket, state))
@@ -682,6 +685,8 @@ async def health(request):
         "rooms": len(ROOMS), "artRooms": len(ART_ROOMS),
         "connectedPlayers": connected,
         "roomPersistence": ROOM_STORE.status,
+        "roomRetentionHours": {"game": GAME_RETENTION_HOURS if ROOM_STORE.enabled else 2,
+                               "art": ART_RETENTION_HOURS if ROOM_STORE.enabled else 6},
         "pendingRoomWrites": len(ROOM_STORE._queue) if ROOM_STORE.enabled else 0,
     }, headers={"Cache-Control": "no-store"})
 

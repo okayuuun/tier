@@ -10,7 +10,7 @@ import re
 import secrets
 import time
 from aiohttp import web
-from room_store import store as ROOM_STORE, ART_TTL
+from room_store import store as ROOM_STORE, ART_TTL, ART_RETENTION_HOURS
 
 LOGGER = logging.getLogger("nakami.echa")
 ROOMS = {}
@@ -238,7 +238,10 @@ async def route_ws(request):
                         'members':public_members(room),'strokes':room['strokes'],
                         'layers':room['layers'], 'maxLayers':MAX_LAYERS,
                         'drawing':list(room['drawing'].values()),'messages':room['messages'],
-                        'version':room['version']})
+                        'version':room['version'],
+                        'restoredAt':room.get('_restoredAt'),
+                        'retentionHours':ART_RETENTION_HOURS if ROOM_STORE.enabled else 6,
+                        'persistence':ROOM_STORE.status})
                     await notify(room,{'type':'members','members':public_members(room)})
                     continue
                 room['last']=time.time()
