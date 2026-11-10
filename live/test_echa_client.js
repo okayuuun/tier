@@ -54,4 +54,16 @@ assert.equal(main.ctx.drawn.length,1,'hidden layer is absent from drawing');
 ctx.layers[1].visible=true;timeline.ctx.drawn=[];
 vm.runInContext('composite',ctx)(timeline.ctx,1,false);
 assert.equal(timeline.ctx.drawn.length,1,'partial timelapse renders only early visible ink');
-console.log('PASS: independent layer erase, transparency, cache, hidden layers, pending strokes and timelapse');
+// New strokes must accumulate without replacing completed strokes.
+ctx.strokes.push(pen('base'));
+main.ctx.drawn=[];
+vm.runInContext('composite',ctx)(main.ctx,4,false);
+const advanced=vm.runInContext('layerPaintCache',ctx).get('3072x2048').images;
+assert.equal(advanced.get('base').ctx.ink.length,2,'a second pen stroke must remain alongside the first');
+assert.equal(main.ctx.drawn.length,2,'new ink must not hide other visible layers');
+ctx.strokes.push(pen('base','eraser'));
+main.ctx.drawn=[];
+vm.runInContext('composite',ctx)(main.ctx,5,false);
+assert.equal(advanced.get('base').ctx.ink.length,3,'eraser must append without dropping previous pen strokes');
+assert.equal(advanced.get('base').ctx.ink.at(-1),'destination-out','eraser uses destination-out only for the target layer');
+console.log('PASS: independent layer erase, cache, consecutive strokes and no unexpected disappearance');

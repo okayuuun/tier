@@ -96,6 +96,7 @@ assert(artStart>=0&&artEnd>artStart);
 let artRetries=0,artMessage='';
 const artWs={};
 const artCtx={ws:artWs,pingTimer:null,handshakeTimer:null,cloudSaveInFlight:false,
+ activePointer:null,pending:new Map(),myId:'artist',
  handedOffToOtherTab:false,retryWanted:true,Date,
  clearTimeout(){},clearInterval(){},stopNetworkTimers(){},
  sessionStorage:{setItem(){}},scheduleReconnect(){artRetries++},

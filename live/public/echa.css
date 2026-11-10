@@ -50,3 +50,9 @@
 }
 .ec-workspace ::selection{background:transparent;color:inherit}
 .ec-workspace ::-moz-selection{background:transparent;color:inherit}
+
+/* Drawing stability: show capacity/error notices and opt-in touch undo clearly. */
+.ec-room #ec-draw-warning{margin:4px 0 11px;font-size:13px;font-weight:800;line-height:1.6}
+.ec-room #ec-draw-warning[hidden]{display:none}
+.ec-gesture-option{display:inline-flex!important;align-items:center;gap:7px;cursor:pointer;font-size:12px;font-weight:800;color:#59406e;padding:8px 4px}
+.ec-gesture-option input{width:17px;height:17px;accent-color:#8155a5;cursor:pointer;flex-shrink:0}

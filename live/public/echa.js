@@ -9,6 +9,7 @@ let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
+let maxStrokes=3000,drawProblem='';
 const paintScratch=new Map();
 const layerPaintCache=new Map();
 const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
@@ -81,7 +82,7 @@ function networkHelp(state){
   :'🔄 サーバーへの接続を回復しています。画面を閉じずにお待ちください。復帰までは新しい線を送信できません。';
 }
 function connected(){return ws&&ws.readyState===WebSocket.OPEN}
-function send(data){if(connected())ws.send(JSON.stringify(data))}
+function send(data){if(!connected())return false;try{ws.send(JSON.stringify(data));return true}catch(_){return false}}
 function storedName(){try{return localStorage.getItem('nk_echa_name')||''}catch(_){return ''}}
 $('ec-name').value=storedName();
 function currentColor(){return $('ec-color').value}
@@ -199,6 +200,12 @@ function connectRoom(name,isRetry=false){
   if(ws!==socket)return;
   clearTimeout(handshakeTimer);handshakeTimer=null;
   clearInterval(pingTimer);pingTimer=null;
+  if(activePointer?.mode==='draw'||pending.has(myId)){
+   discardPendingStroke();
+   drawProblem='⚠️ 通信が切れたため未確定の線を取り消しました。接続回復後に描き直してください。';
+   $('ec-draw-warning').hidden=false;
+   $('ec-draw-warning').textContent=drawProblem;
+  }
   if(cloudSaveInFlight){
    cloudSaveInFlight=false;
    $('ec-save-cloud').disabled=false;
@@ -250,6 +257,19 @@ function onMessage(d){
   return;
  }
  if(d.type==='error'){
+  if(['begin','points','end'].includes(d.action)){
+   // The server rejected the stroke. Remove the local-only preview so
+   // the next line never appears to erase the previous line.
+   discardPendingStroke();
+   if(connected()){
+    // A rejected points/end may leave an unfinished server draft.
+    if(d.action!=='begin')send({type:'cancel'});
+    send({type:'sync'});
+   }
+   drawProblem='⚠️ 描画を保存できませんでした：'+(d.message||'接続状況をご確認ください。');
+   $('ec-draw-warning').hidden=false;
+   $('ec-draw-warning').textContent=drawProblem;
+  }
   alertUI(d.message);
   if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
    // A free Render service may restart and discard an in-memory room.
@@ -310,7 +330,7 @@ function onMessage(d){
   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
-  maxLayers=d.maxLayers||8;normalizeLayers(d.layers);
+  maxLayers=d.maxLayers||8;maxStrokes=Number(d.maxStrokes)||3000;drawProblem='';normalizeLayers(d.layers);
   try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
@@ -326,6 +346,7 @@ function onMessage(d){
  if(d.type==='cancel'){pending.delete(d.by);schedulePending();return}
  if(d.type==='end'){
   strokes.push(d.stroke);pending.delete(d.stroke.by);
+  if(d.stroke.by===myId)drawProblem='';
   redraw();schedulePending();updateCount();return
  }
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
@@ -461,7 +482,18 @@ function composite(target,count=strokes.length,live=false){
  target.restore()
 }
 function redraw(){composite(ctx,strokes.length,true);updateCount()}
-function updateCount(){$('ec-strokes').textContent=strokes.length+'本'}
+function updateCount(){
+ const count=strokes.length;
+ $('ec-strokes').textContent=count+' / '+maxStrokes+'本';
+ const note=$('ec-draw-warning');
+ if(!note)return;
+ if(drawProblem){note.hidden=false;note.textContent=drawProblem;return}
+ if(count<maxStrokes*0.9){note.hidden=true;note.textContent='';return}
+ note.hidden=false;
+ note.textContent=count>=maxStrokes
+  ?'⚠️ この部屋は線の保存上限に達しています。ペン・消しゴムの追加を保存できません。先にPNG保存して主催者に整理をお願いしてください。'
+  :'⚠️ 線の保存上限が近づいています。こまめにPNG保存してください。';
+}
 function schedulePending(){
  if(drawingScheduled)return;drawingScheduled=true;
  requestAnimationFrame(()=>{drawingScheduled=false;redraw()})
@@ -489,6 +521,7 @@ workspace.addEventListener('wheel',ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1
 /* On mobile, two touch pointers pan/zoom the whole board. A pinch discards
    the current brush stroke so there are no unwanted marks on the canvas. */
 const touchPoints=new Map();
+const twoFingerUndoToggle=$('ec-two-finger-undo');
 let pinch=null,pinchUsed=false;
 let firstTouchAt=0,twoFingerTap=false,touchMoved=false,hadTwoFingers=false;
 function pinchInfo(){
@@ -547,7 +580,9 @@ function liftTouch(ev){
  touchPoints.delete(ev.pointerId);
  if(touchPoints.size<2)pinch=null;
  if(touchPoints.size===0){
-  const undoTap=hadTwoFingers&&twoFingerTap&&!touchMoved&&
+  // Gesture undo is opt-in: incidental extra fingertips/palm contact
+  // must not silently delete a finished stroke while someone is drawing.
+  const undoTap=twoFingerUndoToggle?.checked&&hadTwoFingers&&twoFingerTap&&!touchMoved&&
                 Date.now()-firstTouchAt<=430;
   pinchUsed=false;twoFingerTap=false;hadTwoFingers=false;
   if(undoTap&&connected()){
@@ -572,7 +607,24 @@ function coords(ev){
 }
 function flushPoints(){
  if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
- while(sendQueue.length)send({type:'points',points:sendQueue.splice(0,24)})
+ while(sendQueue.length){
+  if(!send({type:'points',points:sendQueue.splice(0,24)})){
+   discardPendingStroke();
+   alertUI('通信が切れたため線を保存できませんでした。再接続してから描いてください。');
+   return false
+  }
+ }
+ return true
+}
+function discardPendingStroke(){
+ if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
+ sendQueue.length=0;
+ pending.delete(myId);
+ if(activePointer?.mode==='draw'){
+  try{overlay.releasePointerCapture(activePointer.id)}catch(_){}
+  activePointer=null
+ }
+ schedulePending()
 }
 function bufferPoint(pt){
  const s=pending.get(myId);
@@ -603,7 +655,10 @@ overlay.addEventListener('pointerdown',ev=>{
  const layer=layers.find(x=>x.id===selectedLayer);
  if(!layer||!layer.visible){alertUI('描画するには表示中のレイヤーを選んでください');activePointer=null;return}
  const s={by:myId,layer:selectedLayer,color:currentColor(),width:currentWidth(),opacity:currentOpacity(),tool:tool==='eraser'?'eraser':'pen',points:[pt]};
- pending.set(myId,s);schedulePending();send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})
+ pending.set(myId,s);schedulePending();
+ if(!send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})){
+  discardPendingStroke();alertUI('未接続のため描画を保存できません。↻ 再接続をお試しください。')
+ }
 });
 overlay.addEventListener('pointermove',ev=>{
  if(ev.pointerType==='touch'&&pinchUsed)return;
@@ -618,8 +673,19 @@ overlay.addEventListener('pointermove',ev=>{
 function finishStroke(ev){
  if(!activePointer||activePointer.id!==ev.pointerId)return;
  if(activePointer.mode==='draw'){
-  const pt=coords(ev);if(pt)bufferPoint(pt);
-  flushPoints();send({type:'end'});
+  if(ev.type==='pointercancel'){
+   // A cancelled pointer (e.g. Safari gesture) must not commit a mark.
+   if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
+   sendQueue.length=0;pending.delete(myId);
+   send({type:'cancel'});schedulePending();
+  }else{
+   const pt=coords(ev);if(pt)bufferPoint(pt);
+   if(!flushPoints())return;
+   if(!send({type:'end'})){
+    discardPendingStroke();
+    alertUI('通信が切れたため線を保存できませんでした。再接続してから描いてください。')
+   }
+  }
  }
  try{overlay.releasePointerCapture(ev.pointerId)}catch(_){}
  activePointer=null
