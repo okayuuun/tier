@@ -13,8 +13,9 @@ const workspace={
 };
 const view={zoom:1,x:0,y:0};
 const sent=[],pending=new Map(),queue=[];
+const undoToggle={checked:false};
 let active=null,moves=0,alerts=[];
-const context={workspace,view,send:s=>sent.push(s),
+const context={workspace,view,$:()=>undoToggle,send:s=>sent.push(s),
  schedulePending(){},connected(){return true},alertUI:x=>alerts.push(x),
  transform(){moves++},pending,sendQueue:queue,
  Date:{now:()=>1000},
@@ -30,7 +31,13 @@ fire('pointerdown',1,20,20);
 fire('pointerdown',2,80,20);
 fire('pointerup',1,20,20);
 fire('pointerup',2,80,20);
-assert.equal(sent.filter(s=>s.type==='undo').length,1,'2 finger tap undoes once');
+assert.equal(sent.filter(s=>s.type==='undo').length,0,'2 finger tap is safe and disabled by default');
+undoToggle.checked=true;
+fire('pointerdown',6,20,20);
+fire('pointerdown',7,80,20);
+fire('pointerup',6,20,20);
+fire('pointerup',7,80,20);
+assert.equal(sent.filter(s=>s.type==='undo').length,1,'2 finger tap only undoes when explicitly enabled');
 assert(alerts.some(a=>a.includes('2本指')));
 sent.length=0;
 fire('pointerdown',3,20,20);
