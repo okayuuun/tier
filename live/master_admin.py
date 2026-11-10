@@ -323,17 +323,21 @@ class MasterAdmin:
                         ts=EXCLUDED.ts, room=EXCLUDED.room,
                         game=EXCLUDED.game, players=EXCLUDED.players,
                         results=EXCLUDED.results, ended_early=EXCLUDED.ended_early
+                    WHERE nakami_master_history.ts <= EXCLUDED.ts
                 """, *row)
         except Exception:
             self._cloud_error = True
             LOGGER.exception("Could not persist master match history")
 
     async def flush_cloud(self, timeout=2):
-        if self._pending_writes:
-            await asyncio.wait(tuple(self._pending_writes), timeout=timeout)
+        if not self._pending_writes:
+            return True
+        _, waiting = await asyncio.wait(tuple(self._pending_writes), timeout=timeout)
+        return not waiting
 
     async def stop_cloud(self):
-        await self.flush_cloud(timeout=8)
+        if not await self.flush_cloud(timeout=8):
+            LOGGER.error("Some master records could not be flushed before shutdown")
 
     @property
     def activity_storage(self):
@@ -557,7 +561,8 @@ class MasterAdmin:
         kind = data.get("kind")
         if kind not in ("audit", "history", "all") or data.get("confirm") != "DELETE":
             raise web.HTTPBadRequest(text="対象と確認文字列を確認してください")
-        await self.flush_cloud(timeout=2)
+        if self._cloud_ready and not await self.flush_cloud(timeout=8):
+            raise web.HTTPServiceUnavailable(text="記録の保存処理中です。少し後で削除をやり直してください。")
         if self._cloud_ready:
             try:
                 async with ROOM_STORE.pool.acquire() as conn:
