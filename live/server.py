@@ -322,6 +322,34 @@ def assign_tier_topics(room):
     room["phase"] = "answer"
 
 
+async def confirm_game_cloud_save(ws, context):
+    """Verify a manual save without blocking game actions in the room lock."""
+    room = context.get("room")
+    pid = context.get("pid")
+    if not room or not pid or room["players"].get(pid, {}).get("ws") is not ws:
+        raise ValueError("先にルームに参加してください")
+    if not ROOM_STORE.enabled:
+        await send_json(ws, {"type": "save_status", "ok": False,
+                             "message": "クラウド保存が無効です。"})
+        return
+    current = time.monotonic()
+    if current - context.get("last_save_check", 0.0) < 10:
+        await send_json(ws, {"type": "save_status", "ok": False,
+                             "message": "連続した保存確認は10秒ほど間を空けてください。"})
+        return
+    context["last_save_check"] = current
+    # The snapshot itself is serialized synchronously in the event loop.
+    # While awaiting PostgreSQL, other participants can continue their turn.
+    saved_at = await ROOM_STORE.save_and_confirm("game", room)
+    if saved_at is None:
+        await send_json(ws, {"type": "save_status", "ok": False,
+                             "message": "保存完了を確認できませんでした。通信状態を確認して再度お試しください。"})
+    else:
+        await send_json(ws, {"type": "save_status", "ok": True,
+                             "at": saved_at,
+                             "message": "クラウドへの保存が完了しました。"})
+
+
 async def handle_event(ws, context, obj):
     t = obj.get("type")
     if t in ("create", "join"):
@@ -388,26 +416,6 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
-    if t == "save_now":
-        if not ROOM_STORE.enabled:
-            await send_json(ws, {"type": "save_status", "ok": False,
-                                 "message": "クラウド保存が無効です。"})
-            return
-        current = time.monotonic()
-        if current - context.get("last_save_check", 0.0) < 10:
-            await send_json(ws, {"type": "save_status", "ok": False,
-                                 "message": "連続した保存確認は10秒ほど間を空けてください。"})
-            return
-        context["last_save_check"] = current
-        saved_at = await ROOM_STORE.save_and_confirm("game", room)
-        if saved_at is None:
-            await send_json(ws, {"type": "save_status", "ok": False,
-                                 "message": "保存完了を確認できませんでした。通信状態を確認して再度お試しください。"})
-        else:
-            await send_json(ws, {"type": "save_status", "ok": True,
-                                 "at": saved_at,
-                                 "message": "クラウドへの保存が完了しました。"})
-        return
     if t == "word_deck":
         if not is_owner or room["phase"] != "lobby" or room["game"] not in WORD_IDS:
             raise ValueError("カードの登録は待機中に主催者だけができます")
@@ -736,6 +744,9 @@ async def websocket(request):
                             active_room["_heartbeatSavedAt"]=time.time()
                             ROOM_STORE.mark("game",active_room)
                     await ws.send_json({"type":"pong","at":time.time()})
+                    continue
+                if obj.get("type") == "save_now":
+                    await confirm_game_cloud_save(ws, ctx)
                     continue
                 # Serialize game actions inside a room. Without this lock,
                 # two simultaneous votes can both evaluate an old phase while

@@ -95,7 +95,7 @@ const artEnd=artSource.indexOf('socket.onerror=()=>',artStart);
 assert(artStart>=0&&artEnd>artStart);
 let artRetries=0,artMessage='';
 const artWs={};
-const artCtx={ws:artWs,pingTimer:null,handshakeTimer:null,
+const artCtx={ws:artWs,pingTimer:null,handshakeTimer:null,cloudSaveInFlight:false,
  handedOffToOtherTab:false,retryWanted:true,Date,
  clearTimeout(){},clearInterval(){},stopNetworkTimers(){},
  sessionStorage:{setItem(){}},scheduleReconnect(){artRetries++},
