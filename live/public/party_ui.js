@@ -38,7 +38,7 @@ function renderParty(){if(!room || !PARTY_GAMES.includes(room.game))return;
  if(room.game==='soup')return renderSoup();
 }
 
-let redClueDraft='',uniqueAnswerDraft='';
+let redClueDraft='',uniqueAnswerDraft='',uniqueRoundKey='';
 function renderRedIto(){
  const p=room.party,owner=room.owner===me,remain=p.remaining||[],pending=p.pending;
  const top=partyStatusBar(p)+`<div class="party-hero">❤️ ${esc(p.theme)}<small>2人の数字を合わせて100を目指そう。言葉で大きさを伝え、ウソもあり！</small></div>`;
@@ -66,17 +66,31 @@ function submitRedClue(){const v=(document.getElementById('red-hint')?.value||re
 function redOffer(target){send({type:'red_offer',target})}
 function renderUnique(){
  const p=room.party,owner=room.owner===me;
+ // 別のお題や次のラウンドでは、前のお題の入力が残らないようにする。
+ const roundKey=[room.matchNo,p.round,p.theme].join('|');
+ if(uniqueRoundKey!==roundKey){uniqueRoundKey=roundKey;uniqueAnswerDraft='';}
  const top=partyStatusBar(p)+`<div class="party-hero">✨ ${esc(p.theme)}<small>全員が違う回答を出せたら成功！</small></div><div class="unique-streak">連続成功 <strong>${p.streak}</strong> / ${p.targetStreak}回　・　第${p.round+1}問 / ${p.roundLimit}問</div>`;
  if(room.phase==='uniq_answer'){
-  const mine=p.submitted?'<div class="info">✅ 提出済み。みんなの回答が集まるまで秘密です。</div>':`<label class="labeled">ほかの人と被らない言葉を考えよう</label><input id="uniq-input" class="field" maxlength="45" value="${esc(uniqueAnswerDraft)}" oninput="uniqueAnswerDraft=this.value" placeholder="例：わさび味のアイス"><div class="btns">${pAction('回答を送る','submitUnique()','gold')}</div>`;
-  return partyTitle('UNIQUE / かぶり禁止','全員バラバラを目指そう',top+mine+`<p class="small">提出：${p.submittedCount} / ${room.active.length}人</p>${owner&&!p.submittedCount?pAction('🎲 別のお題にする','send({type:"uniq_redraw"})','alt'):''}`);
+  const sent=p.submitted?`<div class="info">✅ 回答は送信済みです。今の回答：<strong>${esc(p.myAnswer||'')}</strong><br><span class="small">全員が回答する前なら、下の欄から何度でも修正できます。</span></div>`:'';
+  const value=uniqueAnswerDraft||p.myAnswer||'';
+  const mine=sent+`<label class="labeled" for="uniq-input">ほかの人と被らない言葉を考えよう</label><input id="uniq-input" class="field" maxlength="45" value="${esc(value)}" oninput="uniqueAnswerDraft=this.value" onkeydown="if(event.key==='Enter' && !event.isComposing){event.preventDefault();submitUnique()}" placeholder="例：わさび味のアイス"><div class="btns">${pAction(p.submitted?'回答を修正して送る':'回答を送る','submitUnique()','gold')}</div>`;
+  const total=room.active.length;
+  const count=Math.max(0,Math.min(total,p.submittedCount));
+  const status=`<div class="unique-progress-head"><span>みんなの提出状況</span><strong>${count} / ${total}人</strong></div><div class="unique-progress-bar" role="progressbar" aria-label="回答提出状況" aria-valuemin="0" aria-valuenow="${count}" aria-valuemax="${total}"><span style="width:${total?Math.round(count/total*100):0}%"></span></div><p class="small">全員の回答がそろうと、自動的に答え合わせを始めます。回答内容はそれまで他の人には見えません。</p>`;
+  return partyTitle('UNIQUE / かぶり禁止','全員バラバラを目指そう',top+mine+status+(owner&&!count?pAction('🎲 別のお題にする','send({type:"uniq_redraw"})','alt'):''));
  }
  if(room.phase==='uniq_reveal'){
   const r=p.last;
   return partyTitle('UNIQUE / 答え合わせ',r.success?'🎉 全員不一致！':'💥 回答がかぶった！',top+`<div class="unique-results">${r.answers.map(x=>`<div class="unique-result ${x.duplicate?'bad':'good'}"><b>${esc(x.name)}</b><span>${esc(x.text)}</span><strong>${x.duplicate?'かぶり':'セーフ'}</strong></div>`).join('')}</div><div class="btns">${owner?pAction(p.streak>=p.targetStreak||p.round+1>=p.roundLimit?'最終結果へ':'次のお題へ','send({type:"uniq_next"})','gold'):''}</div>`);
  }
 }
-function submitUnique(){const v=(document.getElementById('uniq-input')?.value||uniqueAnswerDraft).trim();if(!v)return error('回答を入力してください');uniqueAnswerDraft='';send({type:'uniq_answer',text:v})}
+function submitUnique(){
+ // 通信失敗時に入力が消えないよう、サーバーからの確認前には消さない。
+ const v=(document.getElementById('uniq-input')?.value??uniqueAnswerDraft).trim();
+ if(!v)return error('回答を入力してください');
+ uniqueAnswerDraft=v;
+ send({type:'uniq_answer',text:v});
+}
 
 function renderIto(){const p=room.party,owner=room.owner===me,stage=p.stage,remaining=p.remaining.includes(me);
  const top=partyStatusBar(p)+`<div class="party-hero">🕸️ ${esc(p.theme)}<small>数字を直接言わず、テーマに沿う言葉で伝え合おう</small></div><div class="party-lives">${'❤️'.repeat(p.lives)}${'🤍'.repeat(3-p.lives)} <span>共有ライフ：${p.lives} / 3</span></div>`;
