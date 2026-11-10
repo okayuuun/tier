@@ -56,8 +56,13 @@ GAME_RETENTION_HOURS = retention_hours("GAME_ROOM_RETENTION_HOURS", 72, 336)
 ART_RETENTION_HOURS = retention_hours("ECHA_ROOM_RETENTION_HOURS", 168, 720)
 GAME_TTL = GAME_RETENTION_HOURS * 3600
 ART_TTL = ART_RETENTION_HOURS * 3600
+# Keep the existing strict cap for ordinary game rooms.
 MAX_UNCOMPRESSED_BYTES = 12_000_000
 MAX_COMPRESSED_BYTES = 5_000_000
+# Art rooms can contain thousands of strokes. These are byte-safety bounds,
+# not a cap on the number of pen, eraser or bucket operations.
+ART_MAX_UNCOMPRESSED_BYTES = 64_000_000
+ART_MAX_COMPRESSED_BYTES = 24_000_000
 SCHEMA_VERSION = 1
 _PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask", "_restoredAt"))
 
@@ -86,20 +91,24 @@ def serialize_room(kind, room):
     raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
                      ensure_ascii=False, allow_nan=False,
                      separators=(",", ":")).encode("utf-8")
-    if len(raw) > MAX_UNCOMPRESSED_BYTES:
+    raw_cap = ART_MAX_UNCOMPRESSED_BYTES if kind == "art" else MAX_UNCOMPRESSED_BYTES
+    compressed_cap = ART_MAX_COMPRESSED_BYTES if kind == "art" else MAX_COMPRESSED_BYTES
+    if len(raw) > raw_cap:
         raise ValueError("Room snapshot too large to persist")
     compressed = zlib.compress(raw, level=3)
-    if len(compressed) > MAX_COMPRESSED_BYTES:
+    if len(compressed) > compressed_cap:
         raise ValueError("Compressed room snapshot is too large")
     return compressed
 
 
 def deserialize_room(kind, blob):
-    if len(blob) > MAX_COMPRESSED_BYTES:
+    compressed_cap = ART_MAX_COMPRESSED_BYTES if kind == "art" else MAX_COMPRESSED_BYTES
+    raw_cap = ART_MAX_UNCOMPRESSED_BYTES if kind == "art" else MAX_UNCOMPRESSED_BYTES
+    if len(blob) > compressed_cap:
         raise ValueError("Room snapshot exceeds storage limit")
     decoder = zlib.decompressobj()
-    raw = decoder.decompress(blob, MAX_UNCOMPRESSED_BYTES + 1)
-    if len(raw) > MAX_UNCOMPRESSED_BYTES or not decoder.eof or decoder.unused_data:
+    raw = decoder.decompress(blob, raw_cap + 1)
+    if len(raw) > raw_cap or not decoder.eof or decoder.unused_data:
         raise ValueError("Oversized or incomplete saved room")
     obj = json.loads(raw.decode("utf-8"))
     if obj.get("v") != SCHEMA_VERSION or obj.get("kind") != kind:
@@ -125,14 +134,13 @@ def deserialize_room(kind, blob):
         for key in ("strokes", "layers", "identities", "messages", "drawing"):
             if key not in room:
                 raise ValueError("Incomplete art room")
-        if len(room["strokes"]) > 1600 or len(room["identities"]) > 60:
-            raise ValueError("Invalid restored art history")
+        if len(room["identities"]) > 60:
+            raise ValueError("Invalid restored art participants")
         # Preserve any still-in-progress brush work at restart, then treat it
         # as completed so a reconnect cannot start with an orphaned stroke.
         for stroke in room["drawing"].values():
-            if len(room["strokes"]) < 1600:
-                room["strokes"].append(stroke)
-                room["version"] += 1
+            room["strokes"].append(stroke)
+            room["version"] += 1
         room["drawing"] = {}
         room["members"] = {}
         room["notifyLock"] = asyncio.Lock()

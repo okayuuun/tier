@@ -24,16 +24,16 @@ const sent=[],alerts=[],released=[],ctx={
 };
 vm.createContext(ctx);
 vm.runInContext(code,ctx);
-vm.runInContext("onMessage({type:'error',action:'begin',message:'線の保存上限に達しました'})",ctx);
+vm.runInContext("onMessage({type:'error',action:'begin',message:'選択中のレイヤーが非表示です'})",ctx);
 assert.equal(ctx.pending.has('self'),false);
 assert.equal(ctx.sendQueue.length,0);
 assert.equal(ctx.activePointer,null);
 assert.deepEqual(released,[8]);
 assert.equal(warning.hidden,false);
 assert.match(warning.textContent,/保存できません/);
-assert.match(ctx.drawProblem,/上限/);
+assert.match(ctx.drawProblem,/レイヤー/);
 assert.deepEqual(sent.map(x=>x.type),['sync']);
-assert(alerts[0].includes('上限'));
+assert(alerts[0].includes('レイヤー'));
 
 // Non-drawing errors must not remove an unrelated in-progress line.
 ctx.pending.set('self',{points:[[.3,.4]]});
