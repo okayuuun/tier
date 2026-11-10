@@ -388,6 +388,26 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
+    if t == "save_now":
+        if not ROOM_STORE.enabled:
+            await send_json(ws, {"type": "save_status", "ok": False,
+                                 "message": "クラウド保存が無効です。"})
+            return
+        current = time.monotonic()
+        if current - context.get("last_save_check", 0.0) < 10:
+            await send_json(ws, {"type": "save_status", "ok": False,
+                                 "message": "連続した保存確認は10秒ほど間を空けてください。"})
+            return
+        context["last_save_check"] = current
+        saved_at = await ROOM_STORE.save_and_confirm("game", room)
+        if saved_at is None:
+            await send_json(ws, {"type": "save_status", "ok": False,
+                                 "message": "保存完了を確認できませんでした。通信状態を確認して再度お試しください。"})
+        else:
+            await send_json(ws, {"type": "save_status", "ok": True,
+                                 "at": saved_at,
+                                 "message": "クラウドへの保存が完了しました。"})
+        return
     if t == "word_deck":
         if not is_owner or room["phase"] != "lobby" or room["game"] not in WORD_IDS:
             raise ValueError("カードの登録は待機中に主催者だけができます")
@@ -687,7 +707,8 @@ async def health(request):
         "roomPersistence": ROOM_STORE.status,
         "roomRetentionHours": {"game": GAME_RETENTION_HOURS if ROOM_STORE.enabled else 2,
                                "art": ART_RETENTION_HOURS if ROOM_STORE.enabled else 6},
-        "pendingRoomWrites": len(ROOM_STORE._queue) if ROOM_STORE.enabled else 0,
+        "pendingRoomWrites": len(ROOM_STORE._tasks) if ROOM_STORE.enabled else 0,
+        "lastConfirmedRoomWriteAt": int(ROOM_STORE._last_success) if ROOM_STORE._last_success else None,
     }, headers={"Cache-Control": "no-store"})
 
 

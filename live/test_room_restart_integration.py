@@ -59,6 +59,11 @@ async def main():
         await host.send_json({'type':'start'})
         original_host = await state(host,'qt_play')
         original_guest = await state(guest,'qt_play')
+        # Confirm a real cloud write through the same authenticated WebSocket.
+        await host.send_json({'type':'save_now'})
+        save_reply=await asyncio.wait_for(host.receive_json(),12)
+        assert save_reply['type']=='save_status' and save_reply['ok']
+        assert isinstance(save_reply['at'],(float,int))
         expected_host = original_host['room']['board']['myHand']
         expected_guest = original_guest['room']['board']['myHand']
         assert len(expected_host) == 1 and len(expected_guest) == 1
@@ -79,6 +84,9 @@ async def main():
                                'opacity':1,'tool':'pen','point':[.2,.3]})
         await paint.send_json({'type':'end'})
         await art_event(paint,'end')
+        await paint.send_json({'type':'save_now'})
+        confirmed_art=await art_event(paint,'save_status')
+        assert confirmed_art['ok'] and confirmed_art['at']>0
         await server.ROOM_STORE.flush()
 
     # Simulate a fresh Render Python process: globals and sockets reset, but

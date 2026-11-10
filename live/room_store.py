@@ -150,6 +150,11 @@ class RoomStore:
         self._queue = {}
         self._tasks = {}
         self._versions = {}
+        # Versions are only acknowledged AFTER PostgreSQL executes a write.
+        # A queued, serializing, or failed write is never reported as saved.
+        self._saved_versions = {}
+        self._invalid_versions = {}
+        self._saved_times = {}
         self._closing = False
         self._last_warning = 0.0
         self._last_error = 0.0
@@ -215,6 +220,8 @@ class RoomStore:
                     continue
                 (games if kind == "game" else art)[code] = room
                 self._versions[(kind, code)] = item["version"]
+                self._saved_versions[(kind, code)] = item["version"]
+                self._saved_times[(kind, code)] = item["updated_at"]
             except (TypeError, ValueError, KeyError, OverflowError):
                 LOG.exception("Skipping invalid %s room snapshot", kind)
         restored_at = time.time()
@@ -224,6 +231,34 @@ class RoomStore:
             room["_restoredAt"] = restored_at
         LOG.info("Recovered %d game rooms and %d art rooms", len(games), len(art))
         return games, art
+
+    async def save_and_confirm(self, kind, room, *, timeout=9.0):
+        """Save one room and return its committed timestamp, or None.
+
+        Used for a user-requested explicit backup. The background write loop
+        still coalesces edits so many people clicking Save do not produce
+        redundant snapshots. A transient DB failure will return None rather
+        than giving a misleading success message. Does NOT disclose the DSN.
+        """
+        if not self.enabled or self._closing or self.pool is None:
+            return None
+        if kind not in ("game", "art") or not isinstance(room, dict):
+            return None
+        code = room.get("code")
+        if not isinstance(code, str):
+            return None
+        key = (kind, code)
+        version = self._enqueue(kind, code, room)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, float(timeout))
+        while True:
+            if self._saved_versions.get(key, -1) >= version:
+                return self._saved_times[key]
+            if self._invalid_versions.get(key, -1) >= version:
+                return None
+            if loop.time() >= deadline:
+                return None
+            await asyncio.sleep(min(0.06, max(0.0, deadline-loop.time())))
 
     def mark(self, kind, room):
         """Coalesce edits to avoid a database query for every brush point."""
@@ -246,6 +281,7 @@ class RoomStore:
         self._queue[key] = (version, room)
         if key not in self._tasks or self._tasks[key].done():
             self._tasks[key] = asyncio.create_task(self._write_loop(key))
+        return version
 
     async def _write_loop(self, key):
         attempts = 0
@@ -255,11 +291,17 @@ class RoomStore:
                 version, room = self._queue.pop(key)
                 try:
                     await self._write_one(key, version, room)
-                    self._last_success = time.time()
+                    saved_at = time.time()
+                    self._saved_versions[key] = max(
+                        version, self._saved_versions.get(key, -1))
+                    self._saved_times[key] = saved_at
+                    self._last_success = saved_at
                     attempts = 0
                 except (TypeError, ValueError):
                     # Local data that cannot be serialized will not become
                     # valid merely because a database reconnects.
+                    self._invalid_versions[key] = max(
+                        version, self._invalid_versions.get(key, -1))
                     self._last_error = time.time()
                     LOG.exception("Unsavable room snapshot skipped")
                 except Exception:

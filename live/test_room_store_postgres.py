@@ -88,6 +88,22 @@ async def main():
     store.mark('art',a)
     await store.flush()
     assert store.status=='postgres'
+    explicit=await store.save_and_confirm('game',g,timeout=3.0)
+    assert isinstance(explicit,float) and explicit>0
+    async with store.pool.acquire() as conn:
+        persisted=await conn.fetchrow("""
+            SELECT version, data FROM nakami_live_room_snapshots
+            WHERE kind='game' AND code='DUR777'
+        """)
+    assert persisted is not None
+    assert persisted['version'] >= 2
+    assert deserialize_room('game',bytes(persisted['data']))['points']['owner-id']==5
+    # An invalid snapshot must NEVER be acknowledged as stored.
+    malformed=game_room()
+    malformed['code']='DUR780'
+    malformed['bad']=object()
+    assert await store.save_and_confirm('game',malformed,timeout=2.0) is None
+    assert await RoomStore('').save_and_confirm('game',g,timeout=.1) is None
     await store.stop()
 
     fresh=RoomStore(dsn,delay=.05)

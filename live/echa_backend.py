@@ -176,6 +176,7 @@ async def route_ws(request):
     room=None
     player_id=None
     name=''
+    last_manual_save_check=0.0
     try:
         async for msg in ws:
             if msg.type!=web.WSMsgType.TEXT:
@@ -251,6 +252,24 @@ async def route_ws(request):
                         room['_heartbeatSavedAt']=room['last']
                         ROOM_STORE.mark("art", room)
                     await ws.send_json({'type':'pong','at':time.time()})
+                elif action=='save_now':
+                    if not ROOM_STORE.enabled:
+                        await ws.send_json({'type':'save_status','ok':False,
+                            'message':'クラウド保存が無効です。大切な絵はPNG保存してください。'})
+                        continue
+                    current=time.monotonic()
+                    if current-last_manual_save_check<10:
+                        await ws.send_json({'type':'save_status','ok':False,
+                            'message':'連続した保存確認は10秒ほど間を空けてください。'})
+                        continue
+                    last_manual_save_check=current
+                    saved_at=await ROOM_STORE.save_and_confirm('art',room)
+                    if saved_at is None:
+                        await ws.send_json({'type':'save_status','ok':False,
+                            'message':'保存完了を確認できませんでした。PNG保存もご利用ください。'})
+                    else:
+                        await ws.send_json({'type':'save_status','ok':True,
+                            'at':saved_at,'message':'クラウドへの保存が完了しました。'})
                 elif action=='begin':
                     if player_id in room['drawing']:
                         raise ValueError('すでに描画中です')
