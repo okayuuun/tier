@@ -64,6 +64,19 @@ $('ec-layers').addEventListener('change',ev=>{
 let drawingScheduled=false,lastError='';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function alertUI(msg){$('ec-status').textContent=msg;lastError=msg}
+function networkHelp(state){
+ const target=$('ec-connection-help');
+ if(!target)return;
+ target.hidden=state==='ok';
+ if(state==='ok')return;
+ target.textContent=state==='offline'
+  ?'📶 インターネットに接続されていません。Wi-Fi／モバイル通信を確認してください。描画の送信は再接続後に行ってください。'
+  :state==='lost'
+  ?'⚠️ この部屋は保存期限切れか削除済みの可能性があります。画面に絵が残っていれば、先にPNG保存してください。'
+  :reconnectAttempt>=3
+  ?'⚠️ 接続に時間がかかっています。通信状態を確認し、「↻ 再接続」を押してください。画面に絵が残っている場合はPNG保存もできます。'
+  :'🔄 サーバーへの接続を回復しています。画面を閉じずにお待ちください。復帰までは新しい線を送信できません。';
+}
 function connected(){return ws&&ws.readyState===WebSocket.OPEN}
 function send(data){if(connected())ws.send(JSON.stringify(data))}
 function storedName(){try{return localStorage.getItem('nk_echa_name')||''}catch(_){return ''}}
@@ -120,12 +133,14 @@ function scheduleReconnect(){
  if(!retryWanted||!code)return;
  if(reconnectAttempt>=MAX_RECONNECTS){
   alertUI('再接続が続けて失敗しました。「↻ 再接続」を押すか、ブラウザを再読み込みしてください。');
+  networkHelp('retry');
   return
  }
  const delay=Math.min(20000,1200*Math.pow(2,Math.min(reconnectAttempt,4)))+
    Math.floor(Math.random()*350);
  reconnectAttempt++;
  alertUI('通信が切断されました。'+Math.ceil(delay/1000)+'秒後に再接続（'+reconnectAttempt+'/'+MAX_RECONNECTS+'）');
+ networkHelp(navigator.onLine===false?'offline':'retry');
  clearTimeout(reconnectTimer);
  reconnectTimer=setTimeout(()=>connectRoom(activeName||storedName()||'ゲスト',true),delay)
 }
@@ -141,6 +156,7 @@ function connectRoom(name,isRetry=false){
   try{ws.close()}catch(_){}
  }
  alertUI(isRetry?'再接続しています…':'接続しています…');
+ networkHelp(navigator.onLine===false?'offline':'retry');
  const proto=location.protocol==='https:'?'wss:':'ws:';
  const socket=new WebSocket(proto+'//'+location.host+'/api/echa/ws');
  ws=socket;
@@ -191,6 +207,7 @@ document.addEventListener('visibilitychange',()=>{
   connectRoom(activeName||storedName()||'ゲスト',true)
  }
 });
+window.addEventListener('offline',()=>{if(code)networkHelp('offline')});
 window.addEventListener('online',()=>{
  if(ws&&ws.readyState===WebSocket.OPEN)return;
  if(retryWanted&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
@@ -201,7 +218,7 @@ function onMessage(d){
   if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
    // A free Render service may restart and discard an in-memory room.
    // Stop futile retries; old local artwork can still be saved as PNG.
-   retryWanted=false;stopNetworkTimers();
+   retryWanted=false;stopNetworkTimers();networkHelp('lost');
    if(ws){ws.onclose=null;try{ws.close()}catch(_){}}
    const text='前の絵チャの部屋がなくなりました。サーバー再起動などで消えた可能性があります。新しい部屋を作成してください。';
    $('ec-join-error').textContent=text;
@@ -227,6 +244,17 @@ function onMessage(d){
    try{sessionStorage.setItem(resumeKey(),d.resumeToken)}catch(_){}
   }
   $('ec-recovery').hidden=true;
+  networkHelp('ok');
+  const restored=$('ec-restored-note');
+  restored.hidden=!d.restoredAt;
+  restored.textContent=d.restoredAt?
+   '✅ サーバー再起動後、保存済みのキャンバスを復元しました。直前の一部の線は保存されていない可能性があります。':'';
+  const hours=Number(d.retentionHours)||0;
+  $('ec-save-hint').textContent=d.persistence==='postgres'?
+   '☁️ このキャンバスは最終操作から約'+(hours>=24?Math.round(hours/24)+'日':hours+'時間')+'、復元できる状態で保存されます。':
+   d.persistence==='degraded'?
+   '⚠️ 保存先に接続できません。大切な絵をPNG保存してください。':
+   'ℹ️ 現在は一時保存です。大切な絵はPNG保存してください。';
   const current=ws;
   pingTimer=setInterval(()=>{
    if(ws!==current||current.readyState!==WebSocket.OPEN)return;
