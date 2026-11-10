@@ -22,8 +22,6 @@ const sent=[],alerts=[],released=[],ctx={
  connected:()=>true,schedulePending:()=>{},alertUI:x=>alerts.push(x),
  console
 };
-
-};
 vm.createContext(ctx);
 vm.runInContext(code,ctx);
 vm.runInContext("onMessage({type:'error',action:'begin',message:'線の保存上限に達しました'})",ctx);
