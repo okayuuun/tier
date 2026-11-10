@@ -24,7 +24,7 @@ _PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask"))
 def _clean(value):
     if isinstance(value, dict):
         return {str(key): _clean(item) for key, item in value.items()
-                if key not in _PRIVATE_RUNTIME_KEYS and key != "members"}
+                if key not in _PRIVATE_RUNTIME_KEYS}
     if isinstance(value, (list, tuple)):
         return [_clean(item) for item in value]
     if isinstance(value, set):
@@ -38,6 +38,9 @@ def serialize_room(kind, room):
     if kind not in ("game", "art"):
         raise ValueError("Unknown room type")
     data = _clean(room)
+    if kind == "art":
+        # Connected sockets belong to the running instance, never the database.
+        data.pop("members", None)
     raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
                      ensure_ascii=False, allow_nan=False,
                      separators=(",", ":")).encode("utf-8")
@@ -106,6 +109,8 @@ class RoomStore:
         self._versions = {}
         self._closing = False
         self._last_warning = 0.0
+        self._last_error = 0.0
+        self._last_success = 0.0
 
     async def start(self):
         if not self.enabled:
@@ -114,7 +119,8 @@ class RoomStore:
         import asyncpg
         self.pool = await asyncpg.create_pool(dsn=self.dsn,
                                                 min_size=1, max_size=3,
-                                                timeout=10, command_timeout=10)
+                                                timeout=10, command_timeout=10,
+                                                statement_cache_size=0)
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS nakami_live_room_snapshots (
@@ -187,8 +193,15 @@ class RoomStore:
                 version, room = self._queue.pop(key)
                 try:
                     await self._write_one(key, version, room)
+                    self._last_success = time.time()
                     attempts = 0
-                except (Exception,):
+                except (TypeError, ValueError):
+                    # Local data that cannot be serialized will not become
+                    # valid merely because a database reconnects.
+                    self._last_error = time.time()
+                    LOG.exception("Unsavable room snapshot skipped")
+                except Exception:
+                    self._last_error = time.time()
                     # An external DB can temporarily disconnect. Keep the
                     # newest pending state for retry; never crash the game loop.
                     if key not in self._queue:
@@ -225,6 +238,14 @@ class RoomStore:
                       updated_at=EXCLUDED.updated_at
                     WHERE nakami_live_room_snapshots.version <= EXCLUDED.version
                 """, kind, code, version, data, time.time())
+
+    @property
+    def status(self):
+        if not self.enabled:
+            return "memory"
+        if self._last_error > self._last_success:
+            return "degraded"
+        return "postgres"
 
     async def flush(self):
         if not self.enabled:
