@@ -735,8 +735,9 @@ async def websocket(request):
         if room and pid and room["players"].get(pid, {}).get("ws") is ws:
             room["players"][pid]["ws"] = None
             try:
-                async with room.setdefault("lock", asyncio.Lock()):
-                    await broadcast(room)
+                # Disconnect notifications must never wait behind a long
+                # game action or its network broadcasts.
+                await broadcast(room)
             except Exception:
                 LOGGER.exception("Cleanup of disconnected player failed")
     return ws
