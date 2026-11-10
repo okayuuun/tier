@@ -35,12 +35,31 @@ def normalize_postgres_dsn(dsn):
 
 
 LOG = logging.getLogger("nakami.rooms")
-GAME_TTL = 24 * 3600
-ART_TTL = 48 * 3600
+
+
+def retention_hours(name, default, maximum):
+    """Allow bounded retention without accidentally filling a free database."""
+    raw = os.environ.get(name, str(default))
+    try:
+        hours = int(raw)
+    except (ValueError, TypeError):
+        LOG.warning("Invalid retention for %s; using default", name)
+        return default
+    if not 1 <= hours <= maximum:
+        LOG.warning("%s must be between 1 and %d hours; using default", name, maximum)
+        return default
+    return hours
+
+
+# Defaults: game rooms 3 days; art-chat 7 days. Configurable via Render.
+GAME_RETENTION_HOURS = retention_hours("GAME_ROOM_RETENTION_HOURS", 72, 336)
+ART_RETENTION_HOURS = retention_hours("ECHA_ROOM_RETENTION_HOURS", 168, 720)
+GAME_TTL = GAME_RETENTION_HOURS * 3600
+ART_TTL = ART_RETENTION_HOURS * 3600
 MAX_UNCOMPRESSED_BYTES = 12_000_000
 MAX_COMPRESSED_BYTES = 5_000_000
 SCHEMA_VERSION = 1
-_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask"))
+_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask", "_restoredAt"))
 
 
 def _clean(value):
@@ -198,6 +217,11 @@ class RoomStore:
                 self._versions[(kind, code)] = item["version"]
             except (TypeError, ValueError, KeyError, OverflowError):
                 LOG.exception("Skipping invalid %s room snapshot", kind)
+        restored_at = time.time()
+        for room in list(games.values()) + list(art.values()):
+            # Session-independent indicator; do not persist it, so it always
+            # describes a recovery by the current server process.
+            room["_restoredAt"] = restored_at
         LOG.info("Recovered %d game rooms and %d art rooms", len(games), len(art))
         return games, art
 
