@@ -2,6 +2,8 @@ name: Game syntax and smoke test
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 jobs:
   check:
@@ -49,6 +51,10 @@ jobs:
         run: python live/test_extra_modes.py
       - name: Test the newest party game modes
         run: python live/test_more_modes.py
+      - name: Test all-different answer editing and privacy
+        run: python live/test_unique_edit.py
+      - name: Test all-different answer revision controls
+        run: node live/test_unique_edit_ui.js
       - name: Test senryu, flexible tanka, and book titles
         run: python live/test_word_games.py
       - name: Test secret drawing and picture telephone

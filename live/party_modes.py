@@ -205,6 +205,7 @@ def party_snapshot(room, pid):
     elif game=='unique':
         out.update(round=p['round'],roundLimit=p['roundLimit'],streak=p['streak'],targetStreak=p['targetStreak'],
                    theme=p['theme'],submitted=pid in p['answers'],submittedCount=len(p['answers']),
+                    myAnswer=p['answers'].get(pid) if phase=='uniq_answer' else None,
                    last=p.get('last') if phase in ('uniq_reveal','final') else None,
                    history=p['history'] if phase=='final' else [])
     elif game=='propose':
@@ -356,10 +357,11 @@ def handle_party_event(room,pid,typ,obj,is_owner):
                 raise ValueError('回答提出前に主催者だけが変更できます')
             new_unique_round(room)
         elif typ=='uniq_answer':
-            if phase!='uniq_answer' or pid in p['answers']:
+            if phase!='uniq_answer':
                 raise ValueError('今は回答できません')
             v=str(obj.get('text','')).strip()[:45]
             if not 1<=len(v)<=45:raise ValueError('45文字以内で回答してください')
+            # 答え合わせ前なら自分の回答を上書きできる。提出人数は増やさない。
             p['answers'][pid]=v
             if len(p['answers'])==len(active):
                 counts={}
