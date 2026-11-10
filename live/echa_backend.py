@@ -18,11 +18,9 @@ CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 WIDTH, HEIGHT = 3072, 2048
 MAX_ROOMS = 36
 MAX_USERS = 12
-MAX_STROKES = 3000
 MAX_LAYERS = 8
 MAX_POINTS = 320
 MAX_MESSAGES = 65
-MAX_FILLS = 120  # expensive pixel operations; cap per room
 FILL_COOLDOWN = 0.65  # seconds, per participant
 ROOM_TTL = ART_TTL if ROOM_STORE.enabled else 6 * 3600
 
@@ -252,7 +250,7 @@ async def route_ws(request):
                     room['last']=time.time()
                     await ws.send_json({'type':'snapshot','code':code,'me':player_id,
                         'resumeToken':resume_token,'owner':identity['owner'],
-                        'width':WIDTH,'height':HEIGHT, 'maxStrokes':MAX_STROKES,
+                        'width':WIDTH,'height':HEIGHT,
                         'members':public_members(room),'strokes':room['strokes'],
                         'layers':room['layers'], 'maxLayers':MAX_LAYERS,
                         'drawing':list(room['drawing'].values()),'messages':room['messages'],
@@ -294,8 +292,6 @@ async def route_ws(request):
                 elif action=='begin':
                     if player_id in room['drawing']:
                         raise ValueError('すでに描画中です')
-                    if len(room['strokes'])>=MAX_STROKES:
-                        raise ValueError('この絵チャは線の保存上限に達しました。いったんPNG保存してから主催者に整理をお願いしてください')
                     point=clean_point(data.get('point'))
                     props=style_of(data)
                     layer_id=data.get('layer','base')
@@ -334,12 +330,8 @@ async def route_ws(request):
                     # Bucket fills are atomic history entries, like completed
                     # pen strokes. Every viewer replays the same bounded seed
                     # and tolerance, so undo, PNG and timelapse stay in sync.
-                    if len(room['strokes']) >= MAX_STROKES:
-                        raise ValueError('この絵チャは塗りつぶしの保存上限に達しました。いったんPNG保存してください')
                     if player_id in room['drawing']:
                         raise ValueError('線を描き終えてから塗りつぶしてください')
-                    if sum(s.get('tool')=='fill' for s in room['strokes']) >= MAX_FILLS:
-                        raise ValueError('この部屋の塗りつぶし上限に達しました')
                     point=clean_point(data.get('point'))
                     props=style_of({**data,'tool':'pen','width':1})
                     tolerance=data.get('tolerance',15)
