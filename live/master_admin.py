@@ -19,8 +19,11 @@ from aiohttp import web
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
-GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira", "oneword", "spectrum", "quiet", "bluff", "wordagents")
+GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira", "oneword", "spectrum", "quiet", "bluff", "wordagents", "royalletter", "cipherrelay", "skyfire", "scoutline", "aiuebattle")
 LABELS = {
+    "royalletter": "密書の駆け引き", "cipherrelay": "ひみつの暗号便",
+    "skyfire": "みんなの花火", "scoutline": "スカウト・ライン",
+    "aiuebattle": "ひらがな文字バトル",
     "oneword": "ひとこと一致", "spectrum": "感覚メーター", "quiet": "無言の数字",
     "bluff": "花かドクロか", "wordagents": "暗号ワード対決",
     "tier": "みんなでティア表！", "value": "これって重い？判定シート", "either": "恋愛究極の２択",
@@ -40,6 +43,13 @@ LABELS = {
 ACTION_LABELS = {
     "milli_publish":"ミリしら共有セット公開", "milli_submit":"ミリしら回答",
     "ep_topic":"エピソードのお題設定", "ep_submit":"匿名エピソードの提出", "ep_guess":"投稿者の予想", "ep_force":"エピソードを先に進める", "ep_next":"次のお題",
+    "rl_play":"密書のカード使用", "rl_next":"密書の次ラウンド",
+    "dc_clue":"暗号ヒント提出", "dc_guess":"暗号予想", "dc_next":"暗号の次ラウンド",
+    "dc_skip":"暗号の途中集計", "hf_hint":"花火のヒント", "hf_play":"花火カード使用",
+    "hf_discard":"花火カード破棄", "sc_play":"スカウトカード使用",
+    "sc_scout":"カードスカウト", "sc_skip":"スカウトのパス", "sc_next":"次の勝負",
+    "ai_theme":"文字バトルお題設定", "ai_write":"秘密の言葉登録",
+    "ai_attack":"ひらがな攻撃", "ai_next":"次の文字バトル",
     "bg_hint":"ひとことヒント提出", "bg_answer":"お題回答", "bg_skip":"ひとこと途中進行",
     "bg_next":"ひとこと次へ", "sp_clue":"感覚ヒント提出", "sp_guess":"感覚位置予想",
     "sp_force":"感覚途中集計", "sp_next":"感覚次へ", "qt_play":"無言のカードを出す",

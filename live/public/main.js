@@ -30,6 +30,13 @@ Object.assign(GAMES,{
  bluff:{title:'花かドクロか',icon:'💀',desc:'「Skull」型：花かドクロかを見抜くブラフ'},
  wordagents:{title:'暗号ワード対決',icon:'🕵️',desc:'「Codenames」型：ヒント1語で仲間のカードを探す'}
 });
+Object.assign(GAMES,{
+ royalletter:{title:'密書の駆け引き',icon:'💌',desc:'ラブレター型：秘密の数字カードと効果で読み合う'},
+ cipherrelay:{title:'ひみつの暗号便',icon:'🔐',desc:'デクリプト型：味方の解読と敵の盗聴を競う'},
+ skyfire:{title:'みんなの花火',icon:'🎆',desc:'花火（Hanabi）型：自分の手札が見えない協力ゲーム'},
+ scoutline:{title:'スカウト・ライン',icon:'🎪',desc:'スカウト型：手札を並べ替えず強い組を作る'},
+ aiuebattle:{title:'ひらがな文字バトル',icon:'🔤',desc:'あいうえバトル型：ひらがな1文字で相手の秘密を探る'}
+});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const action=(title,fn,kind='')=>`<button type="button" class="btn ${kind}" onclick="${esc(fn)}">${esc(title)}</button>`;
 const panel=(sub,title,content)=>`<section class="pane"><div class="head"><small>${esc(sub)}</small><h2>${esc(title)}</h2></div><div class="body">${content}</div></section>`;
@@ -135,6 +142,7 @@ function render(){
 if(!room)return landing();
 let phase=room.phase,owner=room.owner===me,top=roomBar();
 if(room.customMeta&&phase!=='lobby'){renderStudioLive();return}
+if(BOARD_PLUS_GAMES.includes(room.game)&&phase!=='lobby'){renderBoardPlus();return}
 if(BOARD_GAMES.includes(room.game)&&phase!=='lobby'){renderBoard();return}
 if(EPISODE_GAMES.includes(room.game)&&phase!=='lobby'){renderEpisode();return}
 if(DESIGN_GAMES.includes(room.game)&&phase!=='lobby'){renderDesignGames();return}
@@ -148,7 +156,7 @@ if(phase==='lobby'){
   const choices=`${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).filter(([k])=>!room.publicGames||room.publicGames.includes(k)).map(([k,g])=>`<div class="game-option" data-game-key="${k}"><button class="card ${room.game===k?'on':''}" ${owner?'':'disabled'} onclick="chooseGame('${k}')"><span>${g.icon}</span><strong>${g.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${g.desc}</small></button><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 遊び方を見る</button></div>`).join('')}</div>`;
   const modes=`<h3>お題の配布方法</h3><div class="modegrid"><button class="mode ${room.tierMode==='self'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('self')"><strong>✍️ 自分で作って、自分で答える</strong><small>参加者全員が自由にお題と5つの選択肢を考え、自分の作ったTier表に答える</small></button><button class="mode ${room.tierMode==='shuffle'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('shuffle')"><strong>🎲 みんなのお題をシャッフル</strong><small>全員が作ったお題を、必ず作成者以外の誰かにランダムで1つずつ配る</small></button></div><div class="notice">全員が各自のお題を作成するか、例題からランダム読み込みできます。${room.game==='tier'?'Tier表を1題':'5問のクイズセット'}を作成します。</div>`;
   const buttons=owner?`<div class="btns">${action('ゲーム開始 →','startGame()')}</div>`:`<div class="info">ルーム作成者がゲームを選んで開始するまでお待ちください。</div>`;
-  app.innerHTML=panel('WAITING ROOM / ゲーム待機中','みんなが集まったらスタート',top+`<div class="kicker">参加メンバー (${room.players.length}人)</div><div class="playergrid">${players()}</div><h3>遊ぶゲーム</h3>${studioLobbyPanel()}${room.customMeta?`<div class="notice">現在は自作問題セットが選択されています。通常のゲームに戻す場合は下から別のゲームを選んでください。</div>`:''}${choices}${room.customMeta?'':WORD_GAMES.includes(room.game)?wordLobbyPanel():DRAW_GAMES.includes(room.game)?`<div class="info">🎨 ${esc(GAMES[room.game].desc)}<br>3人以上で、スマホやPCから絵を描けます。</div>`:(BOARD_GAMES.includes(room.game)||PARTY_GAMES.includes(room.game)||MORE_GAMES.includes(room.game)||DRAW_GAMES.includes(room.game)||WORD_GAMES.includes(room.game)||ART_EXTRA_GAMES.includes(room.game)||DRAW_MIX_GAMES.includes(room.game)||EPISODE_GAMES.includes(room.game))?`<div class="info">✨ ${esc(GAMES[room.game].desc)}<br>各自のスマホから参加できます。通話しながら遊ぶのがおすすめです。</div>`:modes}${buttons}<p id="err" class="error" hidden></p>`);applyGameFilters();return;
+  app.innerHTML=panel('WAITING ROOM / ゲーム待機中','みんなが集まったらスタート',top+`<div class="kicker">参加メンバー (${room.players.length}人)</div><div class="playergrid">${players()}</div><h3>遊ぶゲーム</h3>${studioLobbyPanel()}${room.customMeta?`<div class="notice">現在は自作問題セットが選択されています。通常のゲームに戻す場合は下から別のゲームを選んでください。</div>`:''}${choices}${room.customMeta?'':WORD_GAMES.includes(room.game)?wordLobbyPanel():DRAW_GAMES.includes(room.game)?`<div class="info">🎨 ${esc(GAMES[room.game].desc)}<br>3人以上で、スマホやPCから絵を描けます。</div>`:(BOARD_PLUS_GAMES.includes(room.game)||BOARD_GAMES.includes(room.game)||PARTY_GAMES.includes(room.game)||MORE_GAMES.includes(room.game)||DRAW_GAMES.includes(room.game)||WORD_GAMES.includes(room.game)||ART_EXTRA_GAMES.includes(room.game)||DRAW_MIX_GAMES.includes(room.game)||EPISODE_GAMES.includes(room.game))?`<div class="info">✨ ${esc(GAMES[room.game].desc)}<br>各自のスマホから参加できます。通話しながら遊ぶのがおすすめです。</div>`:modes}${buttons}<p id="err" class="error" hidden></p>`);applyGameFilters();return;
 }
 if(phase==='compose'){
   const mine=room.players.find(p=>p.id===me)?.topicSubmitted;

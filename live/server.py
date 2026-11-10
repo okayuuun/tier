@@ -9,6 +9,7 @@ import secrets
 import time
 from pathlib import Path
 from aiohttp import web, WSMsgType
+from board_plus import GAME_IDS as PLUS_IDS, EVENTS as PLUS_EVENTS, start as plus_start, snapshot as plus_snapshot, handle as plus_handle, validate_count as plus_validate_count
 from board_games import GAME_IDS as BOARD_IDS, EVENTS as BOARD_EVENTS, start as board_start, snapshot as board_snapshot, handle as board_handle, validate_count as board_validate_count
 from word_games import GAME_IDS as WORD_IDS, EVENTS as WORD_EVENTS, start as word_start, snapshot as word_snapshot, handle as word_handle, parse_format as parse_word_format, validate_deck as validate_word_deck
 from design_games import GAME_IDS as DESIGN_IDS, EVENTS as DESIGN_EVENTS, start as design_start, snapshot as design_snapshot, handle as design_handle
@@ -30,6 +31,11 @@ MAX_PLAYERS = 12
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
+    "royalletter": {"title": "密書の駆け引き"},
+    "cipherrelay": {"title": "ひみつの暗号便"},
+    "skyfire": {"title": "みんなの花火"},
+    "scoutline": {"title": "スカウト・ライン"},
+    "aiuebattle": {"title": "ひらがな文字バトル"},
     "oneword": {"title": "ひとこと一致"},
     "spectrum": {"title": "感覚メーター"},
     "quiet": {"title": "無言の数字"},
@@ -132,6 +138,8 @@ def room_snapshot(room, pid):
                 "game": room["game"], "phase": room["phase"], "players": [public_player(p, room) for p in room["players"].values()],
                 "matchNo": room["matchNo"], "endedEarly": room["endedEarly"],
                 "customMeta": studio_meta(room["custom"]), "studio": info}}
+    if room['game'] in PLUS_IDS and room['phase'] != 'lobby':
+        return plus_snapshot(room,pid)
     if room['game'] in BOARD_IDS and room['phase'] != 'lobby':
         return board_snapshot(room,pid)
     if room['game'] in EPISODE_IDS and room['phase'] != 'lobby':
@@ -383,6 +391,12 @@ async def handle_event(ws, context, obj):
         studio_handle(room, pid, t, obj, is_owner)
         await broadcast(room)
         return
+    if t in PLUS_EVENTS:
+        if room['game'] not in PLUS_IDS or room['phase'] == 'lobby':
+            raise ValueError('このゲームではその操作を使えません')
+        plus_handle(room,pid,t,obj,is_owner)
+        await broadcast(room)
+        return
     if t in BOARD_EVENTS:
         if room['game'] not in BOARD_IDS or room['phase'] == 'lobby':
             raise ValueError('このゲームではまだその操作を使えません')
@@ -427,6 +441,8 @@ async def handle_event(ws, context, obj):
         online=[p["id"] for p in room["players"].values() if p["ws"] and not p["ws"].closed]
         if room['game'] in BOARD_IDS:
             board_validate_count(room['game'],len(online))
+        if room['game'] in PLUS_IDS:
+            plus_validate_count(room['game'],len(online))
         room["active"] = online
         room["answers"] = {}
         room["guesses"] = {}
@@ -440,6 +456,8 @@ async def handle_event(ws, context, obj):
         room["points"] = {p: 0 for p in room["players"]}
         if room.get("custom"):
             studio_start(room)
+        elif room['game'] in PLUS_IDS:
+            plus_start(room)
         elif room['game'] in BOARD_IDS:
             board_start(room)
         elif room['game'] in EPISODE_IDS:
@@ -551,6 +569,7 @@ async def handle_event(ws, context, obj):
         if not is_owner or phase != "final":
             raise ValueError("ルーム作成者だけがもう一度始められます")
         room["phase"] = "lobby"
+        room.pop('boardplus', None)
         room.pop('board', None)
         room.pop('episode', None)
         room.pop('party', None)
@@ -716,6 +735,9 @@ app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/
     web.get("/word_ui.js", lambda request: web.FileResponse(ROOT / "public" / "word_ui.js")),
     web.get("/word_ui.css", lambda request: web.FileResponse(ROOT / "public" / "word_ui.css")),
     web.get("/word_rules.js", lambda request: web.FileResponse(ROOT / "public" / "word_rules.js")),
+    web.get("/board_plus_ui.js", lambda request: web.FileResponse(ROOT / "public" / "board_plus_ui.js")),
+    web.get("/board_plus_ui.css", lambda request: web.FileResponse(ROOT / "public" / "board_plus_ui.css")),
+    web.get("/board_plus_rules.js", lambda request: web.FileResponse(ROOT / "public" / "board_plus_rules.js")),
     web.get("/board_ui.js", lambda request: web.FileResponse(ROOT / "public" / "board_ui.js")),
     web.get("/board_ui.css", lambda request: web.FileResponse(ROOT / "public" / "board_ui.css")),
     web.get("/more_ui.js", lambda request: web.FileResponse(ROOT / "public" / "more_ui.js")),
