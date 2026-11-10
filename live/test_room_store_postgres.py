@@ -6,7 +6,9 @@ Do not use real production credentials or expose connection URLs in logs.
 import asyncio
 import os
 import time
-from room_store import RoomStore, serialize_room, deserialize_room, normalize_postgres_dsn
+from room_store import (RoomStore, serialize_room, deserialize_room,
+                        normalize_postgres_dsn, retention_hours, GAME_TTL, ART_TTL)
+from unittest.mock import patch
 
 
 class Socket:
@@ -55,6 +57,14 @@ def art_room():
 
 
 async def main():
+    # Retention is configurable without allowing unbounded database growth.
+    assert GAME_TTL >= 3600 and ART_TTL >= 3600
+    with patch.dict(os.environ, {'GAME_ROOM_RETENTION_HOURS':'96'}):
+        assert retention_hours('GAME_ROOM_RETENTION_HOURS',72,336) == 96
+    with patch.dict(os.environ, {'GAME_ROOM_RETENTION_HOURS':'999999'}):
+        assert retention_hours('GAME_ROOM_RETENTION_HOURS',72,336) == 72
+    with patch.dict(os.environ, {'GAME_ROOM_RETENTION_HOURS':'invalid'}):
+        assert retention_hours('GAME_ROOM_RETENTION_HOURS',72,336) == 72
     # Neon Console's normal URL has channel_binding=require. asyncpg does not
     # recognize that parameter, but should retain SSL and password faithfully.
     neon_url = ('postgresql://app:p%40ssword@ep-example-pooler.aws.neon.tech/'
@@ -108,8 +118,37 @@ async def main():
     await check.start()
     games2,arts2=await check.load()
     assert 'DUR777' not in games2 and 'ART777' not in arts2
+    # Retention pruning must remove expired snapshots but preserve recent ones.
+    old_game=game_room()
+    old_game['code']='DUR778'
+    old_art=art_room()
+    old_art['code']='ART778'
+    current_game=game_room()
+    current_game['code']='DUR779'
+    check.mark('game',old_game)
+    check.mark('art',old_art)
+    check.mark('game',current_game)
+    await check.flush()
+    async with check.pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE nakami_live_room_snapshots SET updated_at=$1
+            WHERE kind='game' AND code='DUR778'
+        """, time.time()-GAME_TTL-60)
+        await conn.execute("""
+            UPDATE nakami_live_room_snapshots SET updated_at=$1
+            WHERE kind='art' AND code='ART778'
+        """, time.time()-ART_TTL-60)
+    await check.prune()
+    async with check.pool.acquire() as conn:
+        rows=await conn.fetch("""
+            SELECT code FROM nakami_live_room_snapshots
+            WHERE code IN ('DUR778','ART778','DUR779')
+        """)
+    assert {row['code'] for row in rows}=={'DUR779'}, rows
+    check.delete('game','DUR779')
+    await check.flush()
     await check.stop()
     await fresh.stop()
-    print('PASS PostgreSQL real DB: save, coalesce, restart, session identities, art restoration, remove')
+    print('PASS PostgreSQL real DB: save, coalesce, restart, session identities, expiration cleanup and remove')
 
 asyncio.run(main())

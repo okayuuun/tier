@@ -48,6 +48,9 @@ async def main():
         first = await state(host)
         code = first['room']['code']
         owner_id = first['me']
+        assert first['room']['restoredAt'] is None
+        assert first['room']['retentionHours']==room_store.GAME_RETENTION_HOURS
+        assert first['room']['persistence']=='postgres'
         guest = await client.ws_connect('/ws')
         await guest.send_json({'type':'join','name':'Guest','code':code,'sid':sid2})
         friend = await state(guest)
@@ -69,6 +72,9 @@ async def main():
                                'name':'Drawer','ownerKey':key})
         snap = await art_event(paint,'snapshot')
         paint_pid, token = snap['me'],snap['resumeToken']
+        assert snap['restoredAt'] is None
+        assert snap['retentionHours']==room_store.ART_RETENTION_HOURS
+        assert snap['persistence']=='postgres'
         await paint.send_json({'type':'begin','color':'#bb33cc','width':5,
                                'opacity':1,'tool':'pen','point':[.2,.3]})
         await paint.send_json({'type':'end'})
@@ -91,6 +97,8 @@ async def main():
         await restored_host.send_json({'type':'join','name':'Host','code':code,'sid':sid1})
         after = await state(restored_host,'qt_play')
         assert after['me'] == owner_id
+        assert isinstance(after['room']['restoredAt'], (float, int))
+        assert after['room']['retentionHours']==room_store.GAME_RETENTION_HOURS
         assert after['room']['board']['myHand'] == expected_host
         restored_friend = await client.ws_connect('/ws')
         await restored_friend.send_json({'type':'join','name':'Guest','code':code,'sid':sid2})
@@ -104,8 +112,17 @@ async def main():
                                         'resumeToken':token})
         paint_state = await art_event(restored_paint,'snapshot')
         assert paint_state['me'] == paint_pid
+        assert isinstance(paint_state['restoredAt'], (float, int))
+        assert paint_state['retentionHours']==room_store.ART_RETENTION_HOURS
         assert paint_state['owner'] is True
         assert len(paint_state['strokes']) == 1
+        health=await client.get('/health')
+        details=await health.json()
+        assert details['roomPersistence']=='postgres'
+        assert details['roomRetentionHours']=={
+            'game':room_store.GAME_RETENTION_HOURS,
+            'art':room_store.ART_RETENTION_HOURS,
+        }
         assert paint_state['strokes'][0]['color'] == '#bb33cc'
 
         # The restored game can continue with real actions.
