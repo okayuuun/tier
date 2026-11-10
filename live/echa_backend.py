@@ -375,7 +375,6 @@ async def route_ws(request):
                         room['version']+=1
                         await notify(room,{'type':'remove','id':removed['id'],
                                            'version':room['version']})
-                        audit_art(request, room, name, "echa_undo")
                 elif action=='clear':
                     if not member['owner']:
                         raise ValueError('全消去できるのは部屋の作成者だけです')
