@@ -77,6 +77,8 @@ jobs:
         run: python live/test_echa.py
       - name: Test art-chat ordered broadcasting and stale client isolation
         run: python live/test_realtime_notifications.py
+      - name: Test cloud save confirmation UI and failures
+        run: node live/test_cloud_save_ui.js
       - name: Test recovery banners, retention and smartphone offline guidance
         run: node live/test_recovery_status_ui.js
       - name: Test mobile pinch gestures and touch safe controls
