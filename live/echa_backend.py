@@ -3,12 +3,15 @@
 Room state and its timelapse history live in memory, so a server reboot loses
 the board. Incremental stroke events let multiple clients draw concurrently.
 """
+import asyncio
 import json
+import logging
 import re
 import secrets
 import time
 from aiohttp import web
 
+LOGGER = logging.getLogger("nakami.echa")
 ROOMS = {}
 CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 WIDTH, HEIGHT = 3072, 2048
@@ -119,13 +122,16 @@ def public_members(room):
 
 
 async def notify(room, payload, exclude=None):
+    """Send concurrently so one stalled phone does not freeze all brushes."""
     wire=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
-    for ws in list(room['members']):
-        if ws is not exclude:
-            try:
-                await ws.send_str(wire)
-            except (ConnectionError, RuntimeError):
-                pass
+    sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
+    async def send_one(socket):
+        try:
+            await asyncio.wait_for(socket.send_str(wire), 4)
+        except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
+            LOGGER.warning("Skipping unreachable art-chat socket")
+    if sockets:
+        await asyncio.gather(*(send_one(socket) for socket in sockets))
 
 
 def new_room():
@@ -341,7 +347,21 @@ async def route_ws(request):
                 else:
                     raise ValueError('不明な操作です')
             except (ValueError,TypeError,KeyError,json.JSONDecodeError) as exc:
-                await ws.send_json({'type':'error','message':str(exc)[:130]})
+                if room and ws not in room['members']:
+                    room=None
+                if not ws.closed:
+                    await ws.send_json({'type':'error','message':str(exc)[:130]})
+            except Exception:
+                LOGGER.exception("Unexpected art-chat event failure")
+                if room and ws not in room['members']:
+                    room=None
+                if not ws.closed:
+                    await ws.send_json({'type':'error','code':'internal',
+                                        'message':'描画データの処理エラーです。再接続をお試しください'})
+    except (ConnectionError, OSError):
+        LOGGER.info("Art-chat connection interrupted")
+    except Exception:
+        LOGGER.exception("Unexpected art-chat socket failure")
     finally:
         if room and ws in room['members']:
             del room['members'][ws]
@@ -356,6 +376,19 @@ async def route_ws(request):
     return ws
 
 
+async def shutdown_art_sockets(app):
+    sockets={ws for room in ROOMS.values() for ws in room['members'] if not ws.closed}
+    async def close_one(socket):
+        try:
+            await asyncio.wait_for(socket.send_json({'type':'server_restart'}), 2)
+            await asyncio.wait_for(socket.close(code=1012, message=b'service restart'), 3)
+        except (asyncio.TimeoutError, RuntimeError, ConnectionError, OSError):
+            pass
+    if sockets:
+        await asyncio.gather(*(close_one(socket) for socket in sockets))
+
+
 def register(app):
     app.add_routes([web.post('/api/echa/create',create),
                     web.get('/api/echa/ws',route_ws)])
+    app.on_shutdown.append(shutdown_art_sockets)

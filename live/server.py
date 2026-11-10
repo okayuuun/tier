@@ -3,6 +3,7 @@ Rooms and scores live in memory and disappear on server restart.
 """
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -27,7 +28,11 @@ from custom_live import EVENTS as STUDIO_EVENTS, handle as studio_handle, start 
 ROOT = Path(__file__).parent
 CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ROOMS = {}
+START_TIME = time.time()
+INSTANCE_ID = secrets.token_hex(6)
+LOGGER = logging.getLogger("nakami.live")
 MAX_PLAYERS = 12
+MAX_GAME_ROOMS = 80
 EXAMPLES = json.loads((ROOT / "examples.json").read_text(encoding="utf-8"))
 QUESTION_COUNT = 5
 CONFIGS = {
@@ -188,23 +193,42 @@ def room_snapshot(room, pid):
 
 
 async def send_json(ws, obj):
+    """Bound network writes so one unreachable device cannot stall everyone."""
     if not ws or ws.closed:
-        return
+        return False
     try:
-        await ws.send_str(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
-    except (ConnectionError, RuntimeError):
-        pass
+        payload = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        await asyncio.wait_for(ws.send_str(payload), timeout=5)
+        return True
+    except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
+        LOGGER.warning("Slow or disconnected multiplayer recipient")
+        return False
 
 
 async def broadcast(room):
+    """Build each private snapshot before awaiting; send to peers concurrently."""
     room["lastUsed"] = time.time()
-    for pid, p in list(room["players"].items()):
-        if p["ws"] and not p["ws"].closed:
+    recipients = []
+    published = MASTER.public_games()
+    for pid, player in list(room["players"].items()):
+        socket = player.get("ws")
+        if not socket or socket.closed:
+            continue
+        try:
             state = room_snapshot(room, pid)
-            state["room"]["publicGames"] = MASTER.public_games()
+            state["room"]["publicGames"] = published
             state["room"]["wordFormat"] = room.get("wordFormat")
             state["room"]["wordDeckLoaded"] = bool(room.get("wordDeck"))
-            await send_json(p["ws"], state)
+            recipients.append((player, socket, state))
+        except Exception:
+            LOGGER.exception("Could not generate snapshot for %s in %s", pid, room.get("code"))
+    if not recipients:
+        return
+    results = await asyncio.gather(
+        *(send_json(socket, state) for _, socket, state in recipients))
+    for (player, socket, _), delivered in zip(recipients, results):
+        if not delivered and player.get("ws") is socket:
+            player["ws"] = None
 
 
 def validate_answers(room, pid, arr):
@@ -292,13 +316,24 @@ async def handle_event(ws, context, obj):
         if not name or not re.fullmatch(r"[a-zA-Z0-9_-]{12,90}", sid):
             raise ValueError("ニックネームとセッション情報を確認してください")
         if t == "create":
-            c = code()
-            room = {"code": c, "players": {}, "owner": None, "phase": "lobby",
-                    "game": "tier", "config": dict(CONFIGS["tier"]), "active": [], "playerConfigs": {}, "answers": {},
-                    "guesses": {}, "roundIndex": 0, "points": {}, "lastUsed": time.time(),
-                    "tierMode": "self", "topics": {}, "topicAuthors": {}, "history": [], "matchNo": 0,
-                    "endedEarly": False, "custom": None}
-            ROOMS[c] = room
+            # If the server created a room but its first response was lost,
+            # retrying with the same browser session must recover THAT room.
+            # A deliberate new room has a new browser creation session key.
+            room = next((r for r in ROOMS.values()
+                         if r.get("creatorSid") == sid and r["phase"] == "lobby"
+                         and time.time() - r.get("createdAt", 0) < 600
+                         and any(p["sid"] == sid for p in r["players"].values())), None)
+            if room is None:
+                if len(ROOMS) >= MAX_GAME_ROOMS:
+                    raise ValueError("ルームが混み合っています。時間をおいてください")
+                c = code()
+                room = {"code": c, "players": {}, "owner": None, "phase": "lobby",
+                        "game": "tier", "config": dict(CONFIGS["tier"]), "active": [], "playerConfigs": {}, "answers": {},
+                        "guesses": {}, "roundIndex": 0, "points": {}, "lastUsed": time.time(),
+                        "creatorSid": sid, "createdAt": time.time(), "lock": asyncio.Lock(),
+                        "tierMode": "self", "topics": {}, "topicAuthors": {}, "history": [], "matchNo": 0,
+                        "endedEarly": False, "custom": None}
+                ROOMS[c] = room
         else:
             c = str(obj.get("code", "")).upper().strip()
             room = ROOMS.get(c)
@@ -622,7 +657,17 @@ async def index(request):
 
 
 async def health(request):
-    return web.json_response({"status": "ok", "rooms": len(ROOMS)})
+    # Helpful when diagnosing a lost in-memory room after a Render redeploy.
+    from echa_backend import ROOMS as ART_ROOMS
+    connected = sum(bool(p.get("ws") and not p["ws"].closed)
+                    for room in ROOMS.values() for p in room["players"].values())
+    return web.json_response({
+        "status": "ok", "instance": INSTANCE_ID,
+        "revision": os.environ.get("RENDER_GIT_COMMIT", "unknown")[:12],
+        "uptimeSeconds": int(time.time() - START_TIME),
+        "rooms": len(ROOMS), "artRooms": len(ART_ROOMS),
+        "connectedPlayers": connected
+    }, headers={"Cache-Control": "no-store"})
 
 
 async def websocket(request):
@@ -644,29 +689,72 @@ async def websocket(request):
                     # Client keepalive also prevents unintended idle sleep.
                     await ws.send_json({"type":"pong","at":time.time()})
                     continue
-                old_room = ctx["room"]
-                old_phase = old_room["phase"] if old_room else None
-                old_pid = ctx["pid"]
-                old_name = old_room["players"].get(old_pid, {}).get("name", "") if old_room else ""
-                await handle_event(ws, ctx, obj)
-                after_room = ctx["room"] or old_room
-                if after_room:
-                    actor_id = ctx["pid"]
-                    name = after_room["players"].get(actor_id, {}).get("name", "") if actor_id else old_name
-                    event = str(obj.get("type", ""))[:55]
-                    detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
-                    MASTER.log_action(after_room, name, event, detail)
-                    if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "ep_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
-                        MASTER.save_match(after_room)
-            except (ValueError, KeyError, TypeError) as exc:
+                # Serialize game actions inside a room. Without this lock,
+                # two simultaneous votes can both evaluate an old phase while
+                # an earlier broadcast is still awaiting a slow recipient.
+                target_room = ctx["room"]
+                if not target_room and obj.get("type") == "join":
+                    target_room = ROOMS.get(str(obj.get("code", "")).upper().strip())
+                if not target_room and obj.get("type") == "create":
+                    session = str(obj.get("sid", ""))
+                    target_room = next((r for r in ROOMS.values()
+                                        if r.get("creatorSid") == session
+                                        and r["phase"] == "lobby"), None)
+                lock = target_room.setdefault("lock", asyncio.Lock()) if target_room else asyncio.Lock()
+                async with lock:
+                    old_room = ctx["room"]
+                    old_phase = old_room["phase"] if old_room else None
+                    old_pid = ctx["pid"]
+                    old_name = old_room["players"].get(old_pid, {}).get("name", "") if old_room else ""
+                    await handle_event(ws, ctx, obj)
+                    after_room = ctx["room"] or old_room
+                    if after_room:
+                        actor_id = ctx["pid"]
+                        name = after_room["players"].get(actor_id, {}).get("name", "") if actor_id else old_name
+                        event = str(obj.get("type", ""))[:55]
+                        detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
+                        try:
+                            MASTER.log_action(after_room, name, event, detail)
+                            if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "ep_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
+                                MASTER.save_match(after_room)
+                        except Exception:
+                            LOGGER.exception("Non-critical admin log failure")
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
                 await send_json(ws, {"type": "error", "message": str(exc)[:180]})
+            except Exception:
+                LOGGER.exception("Unexpected game event failure")
+                await send_json(ws, {"type": "error", "code": "internal",
+                                      "message": "ゲーム処理で一時的なエラーが発生しました。もう一度お試しください"})
+    except (ConnectionError, OSError):
+        LOGGER.info("Game connection interrupted")
+    except Exception:
+        LOGGER.exception("Unexpected game socket failure")
     finally:
         room = ctx["room"]
         pid = ctx["pid"]
         if room and pid and room["players"].get(pid, {}).get("ws") is ws:
             room["players"][pid]["ws"] = None
-            await broadcast(room)
+            try:
+                async with room.setdefault("lock", asyncio.Lock()):
+                    await broadcast(room)
+            except Exception:
+                LOGGER.exception("Cleanup of disconnected player failed")
     return ws
+
+
+async def shutdown_game_sockets(app):
+    # A 1012 close tells browsers that Render is replacing this instance.
+    sockets = {p["ws"] for room in ROOMS.values() for p in room["players"].values()
+               if p.get("ws") and not p["ws"].closed}
+    async def close_one(socket):
+        await send_json(socket, {"type": "server_restart",
+                                 "message": "サーバー更新中です。自動的に再接続します"})
+        try:
+            await asyncio.wait_for(socket.close(code=1012, message=b"service restart"), 3)
+        except (asyncio.TimeoutError, RuntimeError, ConnectionError, OSError):
+            pass
+    if sockets:
+        await asyncio.gather(*(close_one(socket) for socket in sockets))
 
 
 async def housekeep(app):
@@ -784,6 +872,7 @@ app.add_routes([
 register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
+app.on_shutdown.append(shutdown_game_sockets)
 app.cleanup_ctx.append(task_ctx)
 
 if __name__ == "__main__":
