@@ -66,6 +66,29 @@ async def check():
         assert sink.rows[-1][3] == "echa_chat"
         assert "秘密" not in repr(sink.rows)
 
+        # Undo still removes the artist's stroke but must not flood
+        # developer activity with one log row for every correction.
+        for i in range(2):
+            await one.send_json({"type": "begin", "point": [.2, .2],
+                                 "color": "#123456", "width": 8,
+                                 "opacity": 1, "tool": "pen", "layer": "base"})
+            await one.send_json({"type": "end"})
+            await receive_type(one, "end")
+            await receive_type(two, "end")
+            assert len(ROOMS[code]["strokes"]) == 1
+            await one.send_json({"type": "undo"})
+            await receive_type(one, "remove")
+            await receive_type(two, "remove")
+            assert ROOMS[code]["strokes"] == []
+
+        # The next audited event establishes that the earlier undo actions
+        # have already finished; no timing race hides a stray undo log.
+        await one.send_json({"type": "chat", "text": "操作記録の同期"})
+        await receive_type(two, "chat")
+        await wait_for_action(sink, "echa_chat", 2)
+        assert all(row[3] != "echa_undo" for row in sink.rows)
+        assert sum(row[3] == "echa_join" for row in sink.rows) == 2
+
         await two.close()
         await wait_for_action(sink, "echa_disconnect")
         resumed = await client.ws_connect("/api/echa/ws")
