@@ -9,9 +9,14 @@
 .ec-recovery strong{display:block;font-size:16px;margin-bottom:7px}
 .ec-recovery a{display:inline-block;color:white;text-decoration:none;background:#8350a9;border-radius:9px;padding:11px 15px;font-weight:850;margin-top:10px}
 .ec-connection-note{line-height:1.8;font-size:12px;background:#f5f0fa;padding:11px;border-radius:9px;margin:10px 0}
+.ec-connect-guide{margin:10px clamp(12px,2vw,25px);padding:11px 14px;background:#fff7e8;border:1px solid #dab377;border-radius:10px;font-size:13px;line-height:1.55}
+.ec-connect-guide[hidden],.ec-restored-note[hidden]{display:none}
+.ec-restored-note{padding:11px 14px;margin:8px 0;background:#e9f8ef;color:#245c39;border:1px solid #93c9a2;border-radius:10px;font-size:13px;line-height:1.5}
+.ec-save-hint{font-size:12px;color:#66516d;padding:6px 4px;line-height:1.5}
 </style></head>
 <body>
 <header class="ec-header"><a href="/">♡ なかみくらべ。</a><strong>🎨 みんなの絵チャ</strong><div class="ec-row ec-header-nav"><a class="ec-header-link" href="/" target="_blank" rel="noopener">🎮 他のゲームを別タブで遊ぶ</a><a class="ec-header-link" href="/">ゲーム一覧へ戻る</a></div><div class="ec-status" id="ec-status">未接続</div></header>
+<div id="ec-connection-help" class="ec-connect-guide" role="status" aria-live="polite" hidden></div>
 <main>
 <section id="ec-join" class="ec-join">
  <div class="ec-hero"><span>EVERYONE DRAW TOGETHER</span><h1>お絵描きチャット</h1><p>広いキャンバスで、友達と同時に描こう！描いた線はリアルタイムで共有。完成した絵を全体保存、制作過程をタイムラプスで楽しめます。</p></div>
@@ -19,9 +24,9 @@
  <label>ニックネーム<input id="ec-name" type="text" maxlength="24" placeholder="例：おかゆ"></label>
  <label>ルームコード（参加するときだけ）<input id="ec-code" type="text" maxlength="6" placeholder="6桁のコード" autocapitalize="characters"></label>
  <div class="ec-row"><button class="ec-primary" id="ec-create">新しいキャンバスを作る</button><button id="ec-join-btn">ルームに参加</button></div>
- <p class="ec-small">最大12人まで同時に描けます。スマホ・タブレット・PCで参加可能。ログイン・外部DB設定は不要です。</p>
-<p class="ec-connection-note">接続が切れた場合は自動で再接続します。無料サーバーの再起動でルームが消えた場合には、新しいルームを作る案内を表示します。</p>
- <p class="ec-warning">この絵チャは一時保存です。サーバー再起動やデプロイでキャンバスとチャット履歴が消える場合があります。大切な作品はPNGまたはタイムラプス動画で保存してください。</p>
+ <p class="ec-small">最大12人まで同時に描けます。スマホ・タブレット・PCで参加可能。ログイン不要で利用できます。</p>
+<p class="ec-connection-note">接続が切れた場合は自動で再接続します。保存機能が有効な場合、再起動後も保存済みの絵を復元します。</p>
+ <p class="ec-warning">保存機能が有効な場合、絵は一定期間サーバーに保存されますが、保存直前の線は失われる可能性があります。大切な作品はPNGまたはタイムラプス動画でも保存してください。</p>
  <p class="ec-error" id="ec-join-error" role="alert"></p>
  </div>
 </section>
@@ -32,6 +37,8 @@
 <a href="/echa">＋ 新しい絵チャの部屋を作る</a>
 </section>
 <section id="ec-room" class="ec-room" hidden>
+ <div id="ec-restored-note" class="ec-restored-note" role="status" hidden></div>
+ <div id="ec-save-hint" class="ec-save-hint"></div>
  <div class="ec-topbar">
    <div><strong>ROOM <span id="ec-room-code"></span></strong><span class="ec-small" id="ec-members-count"></span></div>
    <div class="ec-row"><a class="ec-return-link" href="/" title="部屋のURLはトップページからもう一度開けます">🎲 ゲーム一覧へ</a><button id="ec-copy">🔗 招待リンクをコピー</button><button id="ec-rejoin">↻ 再接続</button><button id="ec-fit">全体表示</button><button id="ec-export" class="ec-primary">🖼️ 全体をPNG保存</button><button id="ec-timelapse">🎞️ タイムラプス</button></div>
@@ -90,6 +97,6 @@
   </div>
 </div>
 </main>
-<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=7" defer></script>
+<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=8" defer></script>
 </body>
 </html>
