@@ -202,6 +202,8 @@ def handle(room,pid,event,obj,is_owner):
             chosen=obj.get('card')
             if type(chosen)!=int or chosen not in [p['hands'][pid],p['drawn']]:
                 raise ValueError('手札のカードを選択してください')
+            target=obj.get('target')
+            if target not in royal_alive(room) or target==pid:target=None
             if chosen==1 and target in royal_alive(room) and target!=pid and target not in p['safe']:
                 guess=obj.get('guess')
                 if type(guess)!=int or not 1<=guess<=8:
@@ -209,8 +211,6 @@ def handle(room,pid,event,obj,is_owner):
             # Card 8 is removed from the round if voluntarily played.
             hand=[p['hands'][pid],p['drawn']]
             hand.remove(chosen);p['hands'][pid]=hand[0]
-            target=obj.get('target')
-            if target not in royal_alive(room) or target==pid:target=None
             p['discards'].append({'by':pid,'card':chosen,'target':target})
             if chosen==8:p['gone'].append(pid)
             elif target and target not in p['safe']:
