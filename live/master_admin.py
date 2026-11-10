@@ -408,10 +408,42 @@ class MasterAdmin:
             rooms.append({"code": room["code"], "game": room["game"], "phase": room["phase"],
                           "players": [{"name": p.get("name", "")[:24], "online": bool(p.get("ws") and not p["ws"].closed)} for p in room["players"].values()],
                           "started": room.get("matchNo", 0), "lastActivity": utc_stamp(room.get("lastUsed", time.time()))})
+        # 絵チャは通常のゲームルームとは別の辞書で管理されています。
+        # 管理画面には接続中の名前だけを表示し、秘密トークンは公開しません。
+        from echa_backend import ROOMS as ART_ROOMS
+        for art_room in ART_ROOMS.values():
+            rooms.append({
+                "code": art_room["code"], "game": "echa", "phase": "drawing",
+                "players": [
+                    {"name": member.get("name", "")[:24], "online": not socket.closed}
+                    for socket, member in art_room.get("members", {}).items()
+                ], "started": 0,
+                "lastActivity": utc_stamp(art_room.get("last", time.time()))
+            })
+        await self.flush_cloud(timeout=0.5)
+        await self._trim_cloud()
         counts = {"events": self.db.execute("SELECT COUNT(*) FROM audit").fetchone()[0],
                   "history": self.db.execute("SELECT COUNT(*) FROM history").fetchone()[0]}
+        if self._cloud_ready:
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    count_row = await conn.fetchrow("""
+                        SELECT
+                          (SELECT COUNT(*) FROM nakami_master_audit) AS events,
+                          (SELECT COUNT(*) FROM nakami_master_history) AS history
+                    """)
+                counts = dict(count_row)
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to load durable activity counts")
+        if self._cloud_ready and not self._cloud_error:
+            note = "管理ログ・対戦履歴はNeon（PostgreSQL）へ保存中。操作ログは30日／最大5000件、対戦履歴は90日です。"
+        elif self._cloud_ready or ROOM_STORE.enabled:
+            note = "⚠️ 管理ログのクラウド保存に問題が発生しています。一部の記録が保存されていない可能性があります。"
+        else:
+            note = "⚠️ 管理ログはこのサーバー内だけに一時保存中です。再起動・再デプロイで失われます。NeonのROOM_DATABASE_URLを設定すると新しいログを保存できます。"
         return web.json_response({"games": self.all_games(), "rooms": rooms, "counts": counts,
-                                  "note": "ログは30日／最大5000件、対戦履歴は90日。Render無料インスタンスでは再デプロイ時に消えることがあります。"},
+                                  "activityStorage": self.activity_storage, "note": note},
                                  headers={"Cache-Control": "no-store"})
 
     async def logs(self, request):
@@ -424,9 +456,33 @@ class MasterAdmin:
         if q:
             sql += " AND (player LIKE ? OR room LIKE ? OR action LIKE ? OR detail LIKE ?)"
             args.extend(["%"+q+"%"] * 4)
-        if game in GAMES:
+        if game in GAMES or game == "echa":
             sql += " AND game=?"; args.append(game)
-        rows = [dict(x) for x in self.db.execute(sql+" ORDER BY ts DESC LIMIT 100 OFFSET ?", [*args,page]).fetchall()]
+        if self._cloud_ready:
+            await self.flush_cloud(timeout=1)
+            try:
+                query = """
+                    SELECT id,ts,room,game,player,action,detail
+                    FROM nakami_master_audit WHERE 1=1
+                """
+                params = []
+                if q:
+                    # $1... positional parameters avoid query injection.
+                    params.extend(["%"+q+"%"] * 4)
+                    query += " AND (player ILIKE $1 OR room ILIKE $2 OR action ILIKE $3 OR detail ILIKE $4)"
+                if game in GAMES or game == "echa":
+                    params.append(game)
+                    query += " AND game=$" + str(len(params))
+                params.append(page)
+                query += " ORDER BY ts DESC, id DESC LIMIT 100 OFFSET $" + str(len(params))
+                async with ROOM_STORE.pool.acquire() as conn:
+                    rows = [dict(r) for r in await conn.fetch(query, *params)]
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to read durable activity records")
+                raise web.HTTPServiceUnavailable(text="クラウド上の操作ログを読み込めません。時間をおいて再読み込みしてください。")
+        else:
+            rows = [dict(x) for x in self.db.execute(sql+" ORDER BY ts DESC LIMIT 100 OFFSET ?", [*args,page]).fetchall()]
         for r in rows:
             r["time"] = utc_stamp(r.pop("ts"))
             r["label"] = ACTION_LABELS.get(r["action"], r["action"])
@@ -434,8 +490,22 @@ class MasterAdmin:
 
     async def histories(self, request):
         self.auth(request)
+        await self.flush_cloud(timeout=1)
+        if self._cloud_ready:
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    source = await conn.fetch("""
+                        SELECT id,ts,room,game,players,results,ended_early
+                        FROM nakami_master_history ORDER BY ts DESC LIMIT 100
+                    """)
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to read durable game history")
+                raise web.HTTPServiceUnavailable(text="クラウド上の対戦履歴を読み込めません。")
+        else:
+            source = self.db.execute("SELECT id,ts,room,game,players,results,ended_early FROM history ORDER BY ts DESC LIMIT 100").fetchall()
         rows = []
-        for r in self.db.execute("SELECT id,ts,room,game,players,results,ended_early FROM history ORDER BY ts DESC LIMIT 100").fetchall():
+        for r in source:
             rows.append({"id": r["id"], "time": utc_stamp(r["ts"]), "room": r["room"], "game": r["game"],
                          "players": json.loads(r["players"]), "results": json.loads(r["results"]),
                          "endedEarly": bool(r["ended_early"])})
@@ -465,8 +535,19 @@ class MasterAdmin:
             rid = int(request.match_info["id"])
         except ValueError:
             raise web.HTTPBadRequest()
-        self.db.execute(f"DELETE FROM {kind} WHERE id=?", (rid,))
-        self.db.commit()
+        if self._cloud_ready:
+            await self.flush_cloud(timeout=1)
+            table = "nakami_master_audit" if kind == "audit" else "nakami_master_history"
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    await conn.execute("DELETE FROM " + table + " WHERE id=$1", rid)
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to delete durable admin record")
+                raise web.HTTPServiceUnavailable(text="クラウドの記録を削除できませんでした。")
+        else:
+            self.db.execute(f"DELETE FROM {kind} WHERE id=?", (rid,))
+            self.db.commit()
         return web.json_response({"ok": True})
 
     async def purge(self, request):
@@ -475,6 +556,19 @@ class MasterAdmin:
         kind = data.get("kind")
         if kind not in ("audit", "history", "all") or data.get("confirm") != "DELETE":
             raise web.HTTPBadRequest(text="対象と確認文字列を確認してください")
+        await self.flush_cloud(timeout=2)
+        if self._cloud_ready:
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    async with conn.transaction():
+                        if kind in ("audit", "all"):
+                            await conn.execute("DELETE FROM nakami_master_audit")
+                        if kind in ("history", "all"):
+                            await conn.execute("DELETE FROM nakami_master_history")
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to clear durable admin records")
+                raise web.HTTPServiceUnavailable(text="クラウドの記録を削除できませんでした。")
         if kind in ("audit", "all"):
             self.db.execute("DELETE FROM audit")
         if kind in ("history", "all"):
@@ -509,9 +603,20 @@ class MasterAdmin:
 
     async def export(self, request):
         self.auth(request)
-        tables = {}
-        for name in ("published", "audit", "history"):
-            tables[name] = [dict(r) for r in self.db.execute(f"SELECT * FROM {name}").fetchall()]
+        await self.flush_cloud(timeout=2)
+        tables = {"published": [dict(r) for r in self.db.execute("SELECT * FROM published").fetchall()]}
+        if self._cloud_ready:
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    tables["audit"] = [dict(r) for r in await conn.fetch("SELECT * FROM nakami_master_audit ORDER BY id")]
+                    tables["history"] = [dict(r) for r in await conn.fetch("SELECT * FROM nakami_master_history ORDER BY id")]
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to export durable admin records")
+                raise web.HTTPServiceUnavailable(text="クラウドの記録を書き出せませんでした。")
+        else:
+            for name in ("audit", "history"):
+                tables[name] = [dict(r) for r in self.db.execute(f"SELECT * FROM {name}").fetchall()]
         return web.json_response({"exportedAt": utc_stamp(time.time()), "records": tables},
                                  headers={"Content-Disposition": 'attachment; filename="nakami-master-backup.json"',
                                           "Cache-Control": "no-store"})
