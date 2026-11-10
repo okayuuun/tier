@@ -229,6 +229,17 @@ async def broadcast(room):
     for (player, socket, _), delivered in zip(recipients, results):
         if not delivered and player.get("ws") is socket:
             player["ws"] = None
+            # Removing a slow socket from membership alone leaves the browser
+            # thinking it is still connected (and it can keep receiving pongs).
+            # Explicitly close it so the built-in client retry can recover.
+            if not socket.closed:
+                async def close_unreachable(stale_socket):
+                    try:
+                        await asyncio.wait_for(
+                            stale_socket.close(code=1011, message=b'stale connection'), 3)
+                    except (asyncio.TimeoutError, RuntimeError, ConnectionError, OSError):
+                        pass
+                asyncio.create_task(close_unreachable(socket))
 
 
 def validate_answers(room, pid, arr):
@@ -740,7 +751,10 @@ async def websocket(request):
             # their next action even though this participant has left.
             async def notify_departure():
                 try:
-                    await broadcast(room)
+                    # Keep peer notifications ordered with new game actions,
+                    # but run independently of the disconnecting request.
+                    async with room.setdefault("lock", asyncio.Lock()):
+                        await broadcast(room)
                 except Exception:
                     LOGGER.exception("Cleanup of disconnected player failed")
             asyncio.create_task(notify_departure())
