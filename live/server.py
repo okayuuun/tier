@@ -734,12 +734,16 @@ async def websocket(request):
         pid = ctx["pid"]
         if room and pid and room["players"].get(pid, {}).get("ws") is ws:
             room["players"][pid]["ws"] = None
-            try:
-                # Disconnect notifications must never wait behind a long
-                # game action or its network broadcasts.
-                await broadcast(room)
-            except Exception:
-                LOGGER.exception("Cleanup of disconnected player failed")
+            # A closed WebSocket request can be cancelled while its handler
+            # is finishing. Detach the peer notification from that request;
+            # otherwise the other players remain marked as "online" until
+            # their next action even though this participant has left.
+            async def notify_departure():
+                try:
+                    await broadcast(room)
+                except Exception:
+                    LOGGER.exception("Cleanup of disconnected player failed")
+            asyncio.create_task(notify_departure())
     return ws
 
 
