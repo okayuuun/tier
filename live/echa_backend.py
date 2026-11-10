@@ -18,7 +18,7 @@ CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 WIDTH, HEIGHT = 3072, 2048
 MAX_ROOMS = 36
 MAX_USERS = 12
-MAX_STROKES = 1600
+MAX_STROKES = 3000
 MAX_LAYERS = 8
 MAX_POINTS = 320
 MAX_MESSAGES = 65
@@ -196,6 +196,7 @@ async def route_ws(request):
         async for msg in ws:
             if msg.type!=web.WSMsgType.TEXT:
                 continue
+            action=None
             try:
                 if len(msg.data)>95000:
                     raise ValueError('データが大きすぎます')
@@ -251,7 +252,7 @@ async def route_ws(request):
                     room['last']=time.time()
                     await ws.send_json({'type':'snapshot','code':code,'me':player_id,
                         'resumeToken':resume_token,'owner':identity['owner'],
-                        'width':WIDTH,'height':HEIGHT,
+                        'width':WIDTH,'height':HEIGHT, 'maxStrokes':MAX_STROKES,
                         'members':public_members(room),'strokes':room['strokes'],
                         'layers':room['layers'], 'maxLayers':MAX_LAYERS,
                         'drawing':list(room['drawing'].values()),'messages':room['messages'],
@@ -294,7 +295,7 @@ async def route_ws(request):
                     if player_id in room['drawing']:
                         raise ValueError('すでに描画中です')
                     if len(room['strokes'])>=MAX_STROKES:
-                        raise ValueError('線が上限に達しました。管理者がキャンバスを整理してください')
+                        raise ValueError('この絵チャは線の保存上限に達しました。いったんPNG保存してから主催者に整理をお願いしてください')
                     point=clean_point(data.get('point'))
                     props=style_of(data)
                     layer_id=data.get('layer','base')
@@ -334,7 +335,7 @@ async def route_ws(request):
                     # pen strokes. Every viewer replays the same bounded seed
                     # and tolerance, so undo, PNG and timelapse stay in sync.
                     if len(room['strokes']) >= MAX_STROKES:
-                        raise ValueError('描画の上限に達しました')
+                        raise ValueError('この絵チャは塗りつぶしの保存上限に達しました。いったんPNG保存してください')
                     if player_id in room['drawing']:
                         raise ValueError('線を描き終えてから塗りつぶしてください')
                     if sum(s.get('tool')=='fill' for s in room['strokes']) >= MAX_FILLS:
@@ -411,7 +412,8 @@ async def route_ws(request):
                 if room and ws not in room['members']:
                     room=None
                 if not ws.closed:
-                    await ws.send_json({'type':'error','message':str(exc)[:130]})
+                    await ws.send_json({'type':'error','message':str(exc)[:130],
+                                        'action':str(action)[:24] if isinstance(action,str) else ''})
             except Exception:
                 LOGGER.exception("Unexpected art-chat event failure")
                 if room and ws not in room['members']:
