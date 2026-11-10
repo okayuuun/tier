@@ -77,6 +77,10 @@ jobs:
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
         run: python live/test_room_store_postgres.py
+      - name: Test durable admin logs and match history after restart
+        env:
+          TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
+        run: python live/test_admin_audit_postgres.py
       - name: Test complete server restart with restored games and echa rooms
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
@@ -85,6 +89,8 @@ jobs:
         run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
         run: python live/test_echa.py
+      - name: Test art chat participant logs and secret redaction
+        run: python live/test_echa_audit.py
       - name: Test art-chat ordered broadcasting and stale client isolation
         run: python live/test_realtime_notifications.py
       - name: Test cloud save confirmation UI and failures

@@ -945,6 +945,7 @@ app.add_routes([
     web.get('/art_selection_guard.js', lambda request: web.FileResponse(ROOT / 'public' / 'art_selection_guard.js')),
     web.get('/echa.css', lambda request: web.FileResponse(ROOT / 'public' / 'echa.css')),
 ])
+app['master_admin'] = MASTER
 register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
@@ -954,6 +955,8 @@ async def persistent_rooms_ctx(app):
     # cleanup. Never silently start with empty rooms if the configured
     # database is unavailable: doing so would risk overwriting real saves.
     await ROOM_STORE.start()
+    # The same Neon connection can also persist admin activity and match history.
+    await MASTER.start_cloud()
     if ROOM_STORE.enabled:
         saved_games, saved_art=await ROOM_STORE.load()
         ROOMS.update(saved_games)
@@ -962,6 +965,7 @@ async def persistent_rooms_ctx(app):
     try:
         yield
     finally:
+        await MASTER.stop_cloud()
         await ROOM_STORE.stop()
 
 

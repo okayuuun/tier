@@ -25,6 +25,20 @@ MAX_MESSAGES = 65
 MAX_FILLS = 120  # expensive pixel operations; cap per room
 FILL_COOLDOWN = 0.65  # seconds, per participant
 ROOM_TTL = ART_TTL if ROOM_STORE.enabled else 6 * 3600
+
+
+def audit_art(request, room, name, action, detail=""):
+    """Only benign metadata: no messages, strokes, login tokens, IPs or private art."""
+    admin = request.app.get("master_admin")
+    if admin is None:
+        return
+    try:
+        admin.log_action({"code": room["code"], "game": "echa"},
+                         name, action, detail)
+    except Exception:
+        LOGGER.exception("Non-critical art-chat audit failure")
+
+
 STYLE_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
 
 
@@ -164,6 +178,7 @@ def new_room():
 
 async def create(request):
     code,key=new_room()
+    audit_art(request, ROOMS[code], "作成者（入室前）", "echa_create")
     return web.json_response({'code':code,'ownerKey':key,'width':WIDTH,'height':HEIGHT},
                              headers={'Cache-Control':'no-store'})
 
@@ -204,6 +219,7 @@ async def route_ws(request):
                     if not isinstance(candidate,str) or len(candidate)>100:
                         candidate=''
                     identity=room['identities'].get(candidate)
+                    is_reconnect = bool(identity)
                     if identity:
                         player_id=identity['id']
                         # A reconnect never consumes an extra seat or loses the
@@ -244,6 +260,10 @@ async def route_ws(request):
                         'retentionHours':ART_RETENTION_HOURS if ROOM_STORE.enabled else 6,
                         'persistence':ROOM_STORE.status})
                     await notify(room,{'type':'members','members':public_members(room)})
+                    # Record a join only after the participant received the room.
+                    # A reconnect isn't a new person; do not log the resume token.
+                    audit_art(request, room, name,
+                              "echa_rejoin" if is_reconnect else "echa_join")
                     continue
                 room['last']=time.time()
                 member=room['members'][ws]
@@ -343,6 +363,7 @@ async def route_ws(request):
                     room['strokes'].append(item)
                     room['version']+=1
                     await notify(room,{'type':'end','stroke':item,'version':room['version']})
+                    audit_art(request, room, name, "echa_fill")
                 elif action=='layer_op':
                     change=change_layer(room,member,data)
                     room['version']+=1
@@ -352,6 +373,7 @@ async def route_ws(request):
                         payload['strokes']=room['strokes']
                         payload['drawing']=list(room['drawing'].values())
                     await notify(room,payload)
+                    audit_art(request, room, name, "echa_layer", str(data.get("op",""))[:16])
                 elif action=='undo':
                     found=next((i for i in range(len(room['strokes'])-1,-1,-1)
                                 if room['strokes'][i]['by']==player_id),None)
@@ -360,6 +382,7 @@ async def route_ws(request):
                         room['version']+=1
                         await notify(room,{'type':'remove','id':removed['id'],
                                            'version':room['version']})
+                        audit_art(request, room, name, "echa_undo")
                 elif action=='clear':
                     if not member['owner']:
                         raise ValueError('全消去できるのは部屋の作成者だけです')
@@ -367,6 +390,7 @@ async def route_ws(request):
                     room['drawing'].clear()
                     room['version']+=1
                     await notify(room,{'type':'clear','version':room['version']})
+                    audit_art(request, room, name, "echa_clear")
                 elif action=='chat':
                     value=data.get('text')
                     if not isinstance(value,str) or not 1<=len(value.strip())<=280:
@@ -376,6 +400,7 @@ async def route_ws(request):
                     room['messages'].append(item)
                     room['messages']=room['messages'][-MAX_MESSAGES:]
                     await notify(room,{'type':'chat','item':item})
+                    audit_art(request, room, name, "echa_chat")
                 elif action=='sync':
                     await ws.send_json({'type':'sync','strokes':room['strokes'],
                                         'drawing':list(room['drawing'].values()),
@@ -401,6 +426,7 @@ async def route_ws(request):
     finally:
         if room and ws in room['members']:
             del room['members'][ws]
+            audit_art(request, room, name, "echa_disconnect")
             if player_id in room['drawing']:
                 # Preserve a disconnected user's completed portion of the stroke.
                 stroke=room['drawing'].pop(player_id)
