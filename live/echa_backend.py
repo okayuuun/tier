@@ -122,16 +122,23 @@ def public_members(room):
 
 
 async def notify(room, payload, exclude=None):
-    """Send concurrently so one stalled phone does not freeze all brushes."""
+    """Preserve event order while sending to peers concurrently and with bounds."""
     wire=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
-    sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
-    async def send_one(socket):
-        try:
-            await asyncio.wait_for(socket.send_str(wire), 4)
-        except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
-            LOGGER.warning("Skipping unreachable art-chat socket")
-    if sockets:
-        await asyncio.gather(*(send_one(socket) for socket in sockets))
+    async with room.setdefault('notifyLock', asyncio.Lock()):
+        sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
+        async def send_one(socket):
+            try:
+                await asyncio.wait_for(socket.send_str(wire), 4)
+                return True
+            except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
+                LOGGER.warning("Disconnecting unreachable art-chat recipient")
+                return False
+        if sockets:
+            results=await asyncio.gather(*(send_one(socket) for socket in sockets))
+            for socket,ok in zip(sockets,results):
+                if not ok and not socket.closed:
+                    # Fire-and-forget close: never delay everyone else's strokes.
+                    asyncio.create_task(socket.close(code=1011,message=b'slow recipient'))
 
 
 def new_room():

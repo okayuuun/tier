@@ -63,6 +63,28 @@ async def main():
         assert error['type']=='error'
         assert '見つかりません' in error['message']
         await missing.close()
+        # Simulate a first create reply being lost before the user sees the code.
+        lost=await client.ws_connect('/ws')
+        sid3='browser_session_lost_first_create_1234'
+        await lost.send_json({'type':'create','name':'復帰テスト','sid':sid3})
+        original=await state(lost)
+        lost_code=original['room']['code']
+        lost_pid=original['me']
+        await lost.close()
+        retry=await client.ws_connect('/ws')
+        await retry.send_json({'type':'create','name':'復帰テスト','sid':sid3})
+        recovered=await state(retry)
+        assert recovered['room']['code']==lost_code
+        assert recovered['me']==lost_pid
+        assert len(recovered['room']['players'])==1
+        res=await client.get('/health')
+        assert res.status==200
+        diag=await res.json()
+        assert diag['status']=='ok' and diag['instance']
+        assert diag['uptimeSeconds']>=0
+        assert diag['rooms']>=1 and 'artRooms' in diag
+        assert 'connectedPlayers' in diag and 'revision' in diag
+        await retry.close()
     print('PASS: regular multiplayer create/join, two users, disconnect, reconnect, heartbeat and lost-room error')
 
 

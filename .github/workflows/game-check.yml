@@ -53,6 +53,8 @@ jobs:
         run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
         run: python live/test_echa.py
+      - name: Test art-chat ordered broadcasting and stale client isolation
+        run: python live/test_realtime_notifications.py
       - name: Test mobile pinch gestures and touch safe controls
         run: node live/test_touch_gestures.js
       - name: Test two-finger tap undo versus pinch in shared echa
