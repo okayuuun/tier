@@ -89,6 +89,10 @@ jobs:
         run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
         run: python live/test_echa.py
+      - name: Test art-chat stroke cap and eraser recovery
+        run: python live/test_echa_stroke_limits.py
+      - name: Test art-chat refused stroke rollback
+        run: node live/test_echa_stroke_recovery.js
       - name: Test art chat participant logs and secret redaction
         run: python live/test_echa_audit.py
       - name: Test art-chat ordered broadcasting and stale client isolation
