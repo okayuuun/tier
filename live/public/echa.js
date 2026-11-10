@@ -4,7 +4,7 @@
 const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
-let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,retryWanted=true,lastConnected=false,activeName='';
+let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,retryWanted=true,lastConnected=false,activeName='';
 const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
@@ -113,8 +113,8 @@ $('ec-create').addEventListener('click',createRoom);
 $('ec-join-btn').addEventListener('click',joinRoom);
 function resumeKey(){return 'nk_echa_resume_'+code}
 function stopNetworkTimers(){
- clearTimeout(reconnectTimer);clearInterval(pingTimer);
- reconnectTimer=null;pingTimer=null
+ clearTimeout(reconnectTimer);clearInterval(pingTimer);clearTimeout(handshakeTimer);
+ reconnectTimer=null;pingTimer=null;handshakeTimer=null
 }
 function scheduleReconnect(){
  if(!retryWanted||!code)return;
@@ -122,7 +122,8 @@ function scheduleReconnect(){
   alertUI('再接続が続けて失敗しました。「↻ 再接続」を押すか、ブラウザを再読み込みしてください。');
   return
  }
- const delay=Math.min(20000,1200*Math.pow(2,Math.min(reconnectAttempt,4)));
+ const delay=Math.min(20000,1200*Math.pow(2,Math.min(reconnectAttempt,4)))+
+   Math.floor(Math.random()*350);
  reconnectAttempt++;
  alertUI('通信が切断されました。'+Math.ceil(delay/1000)+'秒後に再接続（'+reconnectAttempt+'/'+MAX_RECONNECTS+'）');
  clearTimeout(reconnectTimer);
@@ -143,8 +144,19 @@ function connectRoom(name,isRetry=false){
  const proto=location.protocol==='https:'?'wss:':'ws:';
  const socket=new WebSocket(proto+'//'+location.host+'/api/echa/ws');
  ws=socket;
+ function arm(ms){
+  clearTimeout(handshakeTimer);
+  handshakeTimer=setTimeout(()=>{
+   if(ws===socket&&socket.readyState!==WebSocket.CLOSED){
+    alertUI('サーバーの応答が遅いため接続をやり直します…');
+    try{socket.close()}catch(_){}
+   }
+  },ms)
+ }
+ arm(100000);
  socket.onopen=()=>{
   if(ws!==socket)return;
+  arm(25000);
   let resumeToken='';
   try{resumeToken=sessionStorage.getItem(resumeKey())||''}catch(_){}
   socket.send(JSON.stringify({type:'join',code,name,ownerKey,resumeToken}))
@@ -155,7 +167,10 @@ function connectRoom(name,isRetry=false){
  };
  socket.onclose=ev=>{
   if(ws!==socket)return;
+  clearTimeout(handshakeTimer);handshakeTimer=null;
   clearInterval(pingTimer);pingTimer=null;
+  try{sessionStorage.setItem('nk_echa_last_disconnect',
+   new Date().toLocaleString('ja-JP')+' / code '+ev.code)}catch(_){}
   scheduleReconnect()
  };
  socket.onerror=()=>{
@@ -163,6 +178,19 @@ function connectRoom(name,isRetry=false){
  }
 }
 window.addEventListener('pagehide',()=>{retryWanted=false;stopNetworkTimers()});
+window.addEventListener('pageshow',ev=>{
+ // Safari may restore a tab without reloading its JavaScript.
+ if(!ev.persisted||!code)return;
+ retryWanted=true;
+ connectRoom(activeName||storedName()||'ゲスト',true)
+});
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState!=='visible'||!code||!retryWanted)return;
+ if(!ws||ws.readyState===WebSocket.CLOSED||
+    (ws.readyState===WebSocket.OPEN&&Date.now()-lastPongAt>90000)){
+  connectRoom(activeName||storedName()||'ゲスト',true)
+ }
+});
 window.addEventListener('online',()=>{
  if(ws&&ws.readyState===WebSocket.OPEN)return;
  if(retryWanted&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
@@ -186,19 +214,28 @@ function onMessage(d){
   if($('ec-join').hidden===false)$('ec-join-error').textContent=d.message;
   return
  }
- if(d.type==='pong')return;
+ if(d.type==='pong'){lastPongAt=Date.now();return}
+ if(d.type==='server_restart'){
+  alertUI('サーバーの入れ替え中です。再接続を待っています…');return
+ }
  if(d.type==='snapshot'){
   code=d.code;myId=d.me;owner=d.owner;
+  const restoring=lastConnected;
   retryWanted=true;lastConnected=true;reconnectAttempt=0;stopNetworkTimers();
+  lastPongAt=Date.now();
   if(typeof d.resumeToken==='string'){
    try{sessionStorage.setItem(resumeKey(),d.resumeToken)}catch(_){}
   }
   $('ec-recovery').hidden=true;
   const current=ws;
   pingTimer=setInterval(()=>{
-   if(ws===current&&current.readyState===WebSocket.OPEN){
-    current.send(JSON.stringify({type:'ping'}))
+   if(ws!==current||current.readyState!==WebSocket.OPEN)return;
+   if(Date.now()-lastPongAt>75000&&document.visibilityState!=='hidden'){
+    alertUI('通信の応答がないため再接続します…');
+    try{current.close(4000,'heartbeat timeout')}catch(_){}
+    return
    }
+   try{current.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
@@ -208,7 +245,8 @@ function onMessage(d){
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
   history.replaceState(null,'',location.pathname+'?room='+code);
-  redraw();schedulePending();renderChat();renderMembers();fit();
+  redraw();schedulePending();renderChat();renderMembers();
+  if(!restoring)fit();else transform();
   alertUI('● 接続中');return
  }
  if(d.type==='members'){members=d.members||[];renderMembers();return}
