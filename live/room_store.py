@@ -37,10 +37,11 @@ def _clean(value):
 def serialize_room(kind, room):
     if kind not in ("game", "art"):
         raise ValueError("Unknown room type")
-    data = _clean(room)
     if kind == "art":
-        # Connected sockets belong to the running instance, never the database.
-        data.pop("members", None)
+        # Exclude nonserializable live sockets before descending into members.
+        data = _clean({k: v for k, v in room.items() if k != "members"})
+    else:
+        data = _clean(room)
     raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
                      ensure_ascii=False, allow_nan=False,
                      separators=(",", ":")).encode("utf-8")
@@ -134,9 +135,23 @@ class RoomStore:
             """)
         LOG.info("PostgreSQL-backed room recovery enabled")
 
+    async def prune(self):
+        """Remove snapshots past their replay window (and reclaim DB space)."""
+        if not self.enabled or not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            now=time.time()
+            await conn.execute("""
+                DELETE FROM nakami_live_room_snapshots
+                WHERE (kind='game' AND updated_at < $1)
+                   OR (kind='art' AND updated_at < $2)
+                   OR kind NOT IN ('game','art')
+            """, now-GAME_TTL, now-ART_TTL)
+
     async def load(self):
         if not self.enabled:
             return {}, {}
+        await self.prune()
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT kind, code, version, data, updated_at

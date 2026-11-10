@@ -15,6 +15,7 @@ import sqlite3
 import time
 from pathlib import Path
 from aiohttp import web
+from room_store import store as ROOM_STORE
 
 MAX_LOGS = 5000
 LOG_DAYS = 30
@@ -351,12 +352,20 @@ class MasterAdmin:
             raise web.HTTPNotFound(text="ルームが見つかりません")
         room["endedEarly"] = True
         self.save_match(room)
-        for p in list(room["players"].values()):
-            ws = p.get("ws")
-            if ws and not ws.closed:
-                await ws.send_json({"type": "error", "message": "管理者がルームを終了しました"})
-                await ws.close(code=1000, message=b"closed by moderator")
+        async def disconnect(p):
+            ws=p.get("ws")
+            if not ws or ws.closed:
+                return
+            try:
+                await asyncio.wait_for(ws.send_json({
+                    "type":"error","message":"管理者がルームを終了しました"}),2)
+                await asyncio.wait_for(
+                    ws.close(code=1000,message=b"closed by moderator"),3)
+            except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
+                pass
+        await asyncio.gather(*(disconnect(p) for p in list(room["players"].values())))
         self.rooms.pop(code, None)
+        ROOM_STORE.delete("game",code)
         self.log_action({"code": code, "game": room["game"]}, "管理者", "admin_terminate", "ルームを終了")
         return web.json_response({"ok": True})
 

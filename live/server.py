@@ -681,7 +681,7 @@ async def health(request):
         "uptimeSeconds": int(time.time() - START_TIME),
         "rooms": len(ROOMS), "artRooms": len(ART_ROOMS),
         "connectedPlayers": connected,
-        "roomPersistence": "postgres" if ROOM_STORE.enabled else "memory",
+        "roomPersistence": ROOM_STORE.status,
         "pendingRoomWrites": len(ROOM_STORE._queue) if ROOM_STORE.enabled else 0,
     }, headers={"Cache-Control": "no-store"})
 
@@ -788,9 +788,16 @@ async def shutdown_game_sockets(app):
 
 
 async def housekeep(app):
+    last_prune=0
     while True:
         await asyncio.sleep(300)
         now = time.time()
+        if ROOM_STORE.enabled and now-last_prune>3600:
+            try:
+                await ROOM_STORE.prune()
+                last_prune=now
+            except Exception:
+                LOGGER.exception("Pruning expired room snapshots failed")
         for c, room in list(ROOMS.items()):
             timeout=GAME_TTL if ROOM_STORE.enabled else 7200
             if now - room["lastUsed"] > timeout and not any(p["ws"] and not p["ws"].closed for p in room["players"].values()):
