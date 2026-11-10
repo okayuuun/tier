@@ -63,6 +63,7 @@ ACTION_LABELS = {
     "echa_rejoin":"絵チャに再接続", "echa_disconnect":"絵チャから切断・退出",
     "echa_chat":"絵チャでチャット（本文は保存しません）",
     "echa_clear":"絵チャのキャンバス全消去", "echa_layer":"絵チャのレイヤー操作",
+    "echa_undo":"絵チャで自分の描画を取り消し", "echa_fill":"絵チャで塗りつぶし",
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
     "example":"ランダム例題を取得", "topic":"お題提出", "answer":"秘密の正解を登録", "guess":"予想を提出",
     "next":"次のラウンド", "force":"スキップ・進行", "end":"ゲーム終了", "restart":"再プレイ",
