@@ -21,6 +21,16 @@ async def receive_type(ws, typ):
     raise AssertionError("Missing " + typ)
 
 
+async def wait_for_action(sink, action, expected=1):
+    # Snapshot/member packets can arrive before the server finishes writing
+    # audit metadata. Poll the actual event count instead of racing that task.
+    for _ in range(80):
+        if sum(row[3] == action for row in sink.rows) >= expected:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("Missing audit action: " + action)
+
+
 async def check():
     ROOMS.clear()
     sink = Audit()
@@ -39,6 +49,7 @@ async def check():
                              "name": "作者", "ownerKey": data["ownerKey"]})
         await receive_type(one, "snapshot")
         await receive_type(one, "members")
+        await wait_for_action(sink, "echa_join")
         assert sink.rows[-1][:4] == (code, "echa", "作者", "echa_join")
         two = await client.ws_connect("/api/echa/ws")
         await two.send_json({"type": "join", "code": code,
@@ -46,26 +57,28 @@ async def check():
         snap = await receive_type(two, "snapshot")
         resume = snap["resumeToken"]
         await receive_type(two, "members")
+        await wait_for_action(sink, "echa_join", 2)
         assert sink.rows[-1][:4] == (code, "echa", "友人", "echa_join")
 
         await two.send_json({"type": "chat", "text": "秘密のテストメッセージ"})
         await receive_type(one, "chat")
+        await wait_for_action(sink, "echa_chat")
         assert sink.rows[-1][3] == "echa_chat"
         assert "秘密" not in repr(sink.rows)
 
         await two.close()
-        await asyncio.sleep(0.1)
-        assert ("echa_disconnect" in [row[3] for row in sink.rows])
+        await wait_for_action(sink, "echa_disconnect")
         resumed = await client.ws_connect("/api/echa/ws")
         await resumed.send_json({"type": "join", "code": code,
                                  "name": "友人", "resumeToken": resume})
         same = await receive_type(resumed, "snapshot")
         assert same["me"] == snap["me"]
+        await wait_for_action(sink, "echa_rejoin")
         assert sink.rows[-1][3] == "echa_rejoin"
 
         await one.close()
         await resumed.close()
-        await asyncio.sleep(0.1)
+        await wait_for_action(sink, "echa_disconnect", 3)
         assert sum(row[3] == "echa_join" for row in sink.rows) == 2
         assert sum(row[3] == "echa_rejoin" for row in sink.rows) == 1
         assert sum(row[3] == "echa_disconnect" for row in sink.rows) == 3
