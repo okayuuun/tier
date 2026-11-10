@@ -189,16 +189,34 @@ function soupResolve(index){if(confirm(index===null?'真相を公開して、こ
 
 function submitMySoup(){const saved=NKM.games().filter(g=>g.game==='soup').slice(0,25);const ix=Number(document.getElementById('saved-soup')?.value||0),g=saved[ix];if(!g)return;const p=g.config;if(!confirm('今の問題を、自作の「'+g.title+'」に変更しますか？'))return;send({type:'soup_custom',puzzle:{title:g.title,situation:p.situation,solution:p.solution,hints:p.hints}})}
 
-function renderWolf(){const p=room.party,owner=room.owner===me,other=room.players.filter(x=>x.id!==me);
+function renderWolf(){
+ const p=room.party,owner=room.owner===me;
+ const other=room.players.filter(x=>room.active.includes(x.id)&&x.id!==me);
  const top=partyStatusBar(p)+`<div class="party-hero">🐺 あなたに配られた秘密のお題<small>会話の中で自分と違う言葉を持つ人を探そう</small><div class="wolf-word">${esc(p.myWord)}</div></div>`;
  if(room.phase==='wolf_talk'){
-  const vote=p.myVote?`<div class="info">✅ 投票しました。ほかの人を待っています。</div>`:`<h3>誰が少数派だと思う？</h3><div class="red-players">${other.map(x=>`<button type="button" class="red-person" onclick="voteWolf('${x.id}')"><b>${esc(x.name)}さん</b><small>この人に投票する</small></button>`).join('')}</div>`;
-  return partyTitle('BLUFF / 少数派を探そう','会話して1人に投票',top+`<div class="info">自分の言葉を直接見せず、同じ言葉かどうか会話で確認しよう。自分への投票はできません。</div>${vote}<p>投票済み：${p.votedCount} / ${room.active.length}人</p>${owner&&p.votedCount>=2?pAction('集まった投票で判定する','send({type:"wolf_force"})','alt'):''}`);
+  const chosen=other.find(x=>x.id===p.myVote);
+  const voted=new Set(p.votedPlayers||[]);
+  const count=Math.max(0,Math.min(room.active.length,p.votedCount||0)),total=room.active.length;
+  const tip=chosen?`<div class="info">✅ あなたは <strong>${esc(chosen.name)}さん</strong> に投票しています。全員の投票がそろう前なら、別の人を選んで変更できます。</div>`
+   :'<div class="info">💬 お題を直接見せずに会話して、少数派だと思う人を選びましょう。</div>';
+  const options=`<h3>${chosen?'投票を変更する':'誰が少数派だと思う？'}</h3><div class="red-players">${other.map(x=>`<button type="button" class="red-person ${p.myVote===x.id?'wolf-choice-selected':''}" aria-pressed="${p.myVote===x.id}" ${p.myVote===x.id?'disabled':''} onclick="voteWolf('${x.id}')"><b>${esc(x.name)}さん</b><small>${p.myVote===x.id?'✓ 現在の投票先':'この人に投票する'}</small></button>`).join('')}</div>`;
+  const progress=`<div class="wolf-progress-head"><b>投票済み ${count} / ${total}人</b><small>全員が投票すると自動で締め切ります</small></div><div class="wolf-progress" role="progressbar" aria-label="ワードウルフの投票状況" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${count}"><span style="width:${total?Math.round(count/total*100):0}%"></span></div><div class="wolf-voter-list">${room.active.map(id=>`<span class="wolf-voter ${voted.has(id)?'is-done':'is-waiting'}">${voted.has(id)?'✅':'⏳'} ${esc(pName(id))}さん</span>`).join('')}</div><p class="small">投票した人だけが表示されます。誰に投票したかは結果発表まで秘密です。</p>`;
+  const force=owner&&count>=2?pAction('集まった投票で判定する','forceWolfVote()','alt'):'';
+  return partyTitle('BLUFF / 少数派を探そう','会話して1人に投票',top+tip+options+progress+force);
  }
  if(room.phase==='wolf_guess')return partyTitle('BLUFF / 最後の逆転','少数派は多数派の言葉を当てよう',top+`<div class="info">投票で少数派が見つかりました。少数派の人は、多数派が持っている言葉を当てると逆転ボーナスがあります。</div>${p.canGuess?`<label class="labeled">多数派の言葉を予想して入力</label><div class="wolf-guess"><input class="field" id="wolf-guess-input" maxlength="60" placeholder="多数派の言葉は？"><div class="btns">${pAction('回答する','guessWolf()','gold')}</div></div>`:'<div class="info">少数派が多数派のお題を当てるまで待ちましょう。</div>'}`);
  if(room.phase==='wolf_reveal'){
-  const r=p.last;return partyTitle('REVEAL / 結果発表',r.caught?'🐺 少数派を発見！':'🐺 少数派が逃げ切り！',top+`<div class="resultbadge center">多数派：${esc(r.majority)}<br>少数派：${esc(r.minority)}<br>少数派だったのは <b>${esc(r.wolfName)}さん</b></div><p>${r.caught?`多数派の言葉を当てて逆転：${r.wolfGuessed?'成功！':'失敗'}`:'少数派に投票が集まりませんでした。'}</p><div class="party-stack">${r.votes.map(x=>`<div class="party-detail">${esc(x.name)}さん → ${esc(pName(x.target))}さんに投票</div>`).join('')}</div><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次のラウンドへ','send({type:"wolf_next"})','gold'):''}</div>`)
+  const r=p.last;
+  return partyTitle('REVEAL / 結果発表',r.caught?'🐺 少数派を発見！':'🐺 少数派が逃げ切り！',top+`<div class="resultbadge center">多数派：${esc(r.majority)}<br>少数派：${esc(r.minority)}<br>少数派だったのは <b>${esc(r.wolfName)}さん</b></div><p>${r.caught?`多数派の言葉を当てて逆転：${r.wolfGuessed?'成功！':'失敗'}`:'少数派に投票が集まりませんでした。'}</p><div class="party-stack">${r.votes.map(x=>`<div class="party-detail">${esc(x.name)}さん → ${esc(pName(x.target))}さんに投票</div>`).join('')}</div><div class="btns">${owner?pAction(p.round+1>=p.roundLimit?'最終結果へ':'次のラウンドへ','send({type:"wolf_next"})','gold'):''}</div>`);
  }
 }
-function voteWolf(id){if(confirm('この人を少数派として投票しますか？'))send({type:'wolf_vote',target:id})}
+function voteWolf(id){
+ const target=room?.players?.find(x=>x.id===id);
+ if(!target||id===me||room.phase!=='wolf_talk'||room.party.myVote===id)return;
+ const message=room.party.myVote?`投票先を「${target.name}さん」に変更しますか？`:`「${target.name}さん」に投票しますか？`;
+ if(confirm(message))send({type:'wolf_vote',target:id});
+}
+function forceWolfVote(){
+ if(confirm('まだ投票していない人がいても、現在集まった票で判定しますか？ もう投票の変更はできません。'))send({type:'wolf_force'});
+}
 function guessWolf(){send({type:'wolf_guess',text:document.getElementById('wolf-guess-input')?.value||''})}
