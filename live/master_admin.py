@@ -8,6 +8,7 @@ import asyncio
 import datetime as dt
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -20,6 +21,7 @@ from room_store import store as ROOM_STORE
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
+LOGGER = logging.getLogger('nakami.master')
 GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira", "oneword", "spectrum", "quiet", "bluff", "wordagents", "royalletter", "cipherrelay", "skyfire", "scoutline", "aiuebattle")
 LABELS = {
     "royalletter": "密書の駆け引き", "cipherrelay": "ひみつの暗号便",
@@ -57,6 +59,10 @@ ACTION_LABELS = {
     "qt_next":"無言の次ステージ", "bl_place":"花かドクロを置く", "bl_bid":"枚数入札",
     "bl_pass":"パス", "bl_flip":"カード公開", "bl_next":"次の勝負",
     "wa_clue":"チームのヒント", "wa_pick":"言葉を公開", "wa_pass":"チーム手番終了",
+    "echa_create":"絵チャの部屋作成", "echa_join":"絵チャに参加",
+    "echa_rejoin":"絵チャに再接続", "echa_disconnect":"絵チャから切断・退出",
+    "echa_chat":"絵チャでチャット（本文は保存しません）",
+    "echa_clear":"絵チャのキャンバス全消去", "echa_layer":"絵チャのレイヤー操作",
     "create":"ルーム作成", "join":"ルーム参加", "configure":"ゲーム設定", "start":"ゲーム開始",
     "example":"ランダム例題を取得", "topic":"お題提出", "answer":"秘密の正解を登録", "guess":"予想を提出",
     "next":"次のラウンド", "force":"スキップ・進行", "end":"ゲーム終了", "restart":"再プレイ",
@@ -126,6 +132,10 @@ class MasterAdmin:
         self._last_trim = 0
         self.rooms = None
         self.broadcast = None
+        self._cloud_ready = False
+        self._pending_writes = set()
+        self._cloud_error = False
+        self._cloud_trimmed = 0.0
 
     def public_games(self):
         return [r["game"] for r in self.db.execute("SELECT game FROM published WHERE enabled=1").fetchall() if r["game"] in GAMES]
@@ -151,11 +161,18 @@ class MasterAdmin:
         if action not in ACTION_LABELS and action not in ("admin_visibility", "admin_delete", "admin_terminate", "admin_export", "shared_challenge"):
             # Still record the recognized WebSocket event name as metadata.
             action = str(action)[:55]
+        stamp = time.time()
+        room_code = str(room.get("code", ""))[:12]
+        game = str(room.get("game", ""))[:36]
+        player = str(name)[:24]
+        action_name = action[:60]
+        note = str(detail)[:180]
         self.db.execute("INSERT INTO audit(ts,room,game,player,action,detail) VALUES (?,?,?,?,?,?)",
-                        (time.time(), str(room.get("code", ""))[:12], str(room.get("game", ""))[:36],
-                         str(name)[:24], action[:60], str(detail)[:180]))
+                        (stamp, room_code, game, player, action_name, note))
         self.db.commit()
         self._trim()
+        self._schedule_cloud(self._write_cloud_audit,
+                             (stamp, room_code, game, player, action_name, note))
 
     def save_match(self, room):
         stamp = f"{room.get('code', '')}:{room.get('matchNo', 0)}"
@@ -196,11 +213,132 @@ class MasterAdmin:
                        "round": p.get("round"), "mode": room.get("game"), "currentStep": p.get("step")}
         details["status"] = room.get("phase", "")
         summary = json.dumps(clean_history(details), ensure_ascii=False)[:40000]
+        recorded_at = time.time()
+        room_code = room.get("code", "")
+        game = room.get("game", "")
+        serialized_players = json.dumps(players, ensure_ascii=False)
+        ended_early = int(bool(room.get("endedEarly")))
         self.db.execute("INSERT OR REPLACE INTO history(stamp,ts,room,game,players,results,ended_early) VALUES (?,?,?,?,?,?,?)",
-                        (stamp, time.time(), room.get("code", ""), room.get("game", ""),
-                         json.dumps(players, ensure_ascii=False), summary, int(bool(room.get("endedEarly")))))
+                        (stamp, recorded_at, room_code, game, serialized_players, summary, ended_early))
         self.db.commit()
         self._trim()
+        self._schedule_cloud(self._write_cloud_history,
+                             (stamp, recorded_at, room_code, game, serialized_players,
+                              summary, ended_early))
+
+
+    async def start_cloud(self):
+        """Use the already configured room PostgreSQL connection for admin metadata.
+
+        The existing SQLite database remains a local fallback. Never store
+        WebSocket credentials, IP addresses, image contents or chat bodies.
+        """
+        if not ROOM_STORE.enabled or ROOM_STORE.pool is None:
+            return
+        try:
+            async with ROOM_STORE.pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS nakami_master_audit (
+                        id BIGSERIAL PRIMARY KEY,
+                        ts DOUBLE PRECISION NOT NULL,
+                        room TEXT, game TEXT, player TEXT,
+                        action TEXT NOT NULL, detail TEXT
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS nakami_master_history (
+                        id BIGSERIAL PRIMARY KEY,
+                        stamp TEXT UNIQUE NOT NULL,
+                        ts DOUBLE PRECISION NOT NULL,
+                        room TEXT, game TEXT, players TEXT,
+                        results TEXT, ended_early INTEGER
+                    )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS nakami_master_audit_ts ON nakami_master_audit(ts DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS nakami_master_history_ts ON nakami_master_history(ts DESC)")
+            self._cloud_ready = True
+            await self._trim_cloud(force=True)
+        except Exception:
+            self._cloud_ready = False
+            self._cloud_error = True
+            LOGGER.exception("Could not initialize durable master activity storage")
+
+    async def _trim_cloud(self, force=False):
+        if not self._cloud_ready or not ROOM_STORE.pool:
+            return
+        now = time.time()
+        if not force and now - self._cloud_trimmed < 3600:
+            return
+        try:
+            async with ROOM_STORE.pool.acquire() as conn:
+                await conn.execute("DELETE FROM nakami_master_audit WHERE ts < $1",
+                                   now - LOG_DAYS * 86400)
+                await conn.execute("""
+                    DELETE FROM nakami_master_audit
+                    WHERE id IN (SELECT id FROM nakami_master_audit
+                        ORDER BY id DESC OFFSET $1)
+                """, MAX_LOGS)
+                await conn.execute("DELETE FROM nakami_master_history WHERE ts < $1",
+                                   now - HISTORY_DAYS * 86400)
+            self._cloud_trimmed = now
+        except Exception:
+            self._cloud_error = True
+            LOGGER.exception("Unable to prune durable master activity records")
+
+    def _schedule_cloud(self, function, row):
+        if not self._cloud_ready:
+            return
+        if len(self._pending_writes) >= 300:
+            self._cloud_error = True
+            LOGGER.error("Master activity write backlog is full")
+            return
+        try:
+            task = asyncio.get_running_loop().create_task(function(row))
+            self._pending_writes.add(task)
+            task.add_done_callback(self._pending_writes.discard)
+        except RuntimeError:
+            self._cloud_error = True
+            LOGGER.error("Master activity write scheduled outside an event loop")
+
+    async def _write_cloud_audit(self, row):
+        try:
+            async with ROOM_STORE.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO nakami_master_audit(ts,room,game,player,action,detail)
+                    VALUES($1,$2,$3,$4,$5,$6)
+                """, *row)
+        except Exception:
+            self._cloud_error = True
+            LOGGER.exception("Could not persist master activity event")
+
+    async def _write_cloud_history(self, row):
+        try:
+            async with ROOM_STORE.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO nakami_master_history
+                    (stamp,ts,room,game,players,results,ended_early)
+                    VALUES($1,$2,$3,$4,$5,$6,$7)
+                    ON CONFLICT(stamp) DO UPDATE SET
+                        ts=EXCLUDED.ts, room=EXCLUDED.room,
+                        game=EXCLUDED.game, players=EXCLUDED.players,
+                        results=EXCLUDED.results, ended_early=EXCLUDED.ended_early
+                """, *row)
+        except Exception:
+            self._cloud_error = True
+            LOGGER.exception("Could not persist master match history")
+
+    async def flush_cloud(self, timeout=2):
+        if self._pending_writes:
+            await asyncio.wait(tuple(self._pending_writes), timeout=timeout)
+
+    async def stop_cloud(self):
+        await self.flush_cloud(timeout=8)
+
+    @property
+    def activity_storage(self):
+        if self._cloud_ready:
+            return "postgres"
+        return "degraded" if ROOM_STORE.enabled else "local"
 
     def _require_auth(self, req):
         key = req.cookies.get("nakami_master", "")
