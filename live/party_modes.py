@@ -200,6 +200,8 @@ def party_snapshot(room, pid):
     elif game=='wolf':
         out.update(round=p['round'],roundLimit=p['roundLimit'],myWord=p['pair'][1] if pid==p['wolf'] else p['pair'][0],
           canGuess=(pid==p['wolf'] and phase=='wolf_guess'),myVote=p['votes'].get(pid),votedCount=len(p['votes']),
+          # 投票先ではなく『投票が済んだ人』だけを共有。秘密の票は漏らさない。
+          votedPlayers=[x for x in room['active'] if x in p['votes']],
           last=p['last'] if phase in ('wolf_reveal','final') else None,
           history=p['history'] if phase=='final' else [])
     elif game=='unique':
@@ -325,8 +327,12 @@ def handle_party_event(room,pid,typ,obj,is_owner):
     elif room['game']=='wolf':
         if typ=='wolf_vote':
             target=obj.get('target')
-            if phase!='wolf_talk' or pid in p['votes'] or target not in active or target==pid:
+            if phase!='wolf_talk' or target not in active or target==pid:
                 raise ValueError('自分以外の人を1人選んで投票してください')
+            if p['votes'].get(pid)==target:
+                raise ValueError('すでにこの人に投票しています')
+            # 全員の投票がそろう前なら、自分の投票先だけ変更できる。
+            # 辞書の同じキーを上書きするため投票人数は増えない。
             p['votes'][pid]=target
             if len(p['votes'])==len(active):
                 counts={x:list(p['votes'].values()).count(x) for x in active}
