@@ -66,7 +66,10 @@ assert.equal(st.get('nakami_sid_'+code),sid);
 vm.runInContext("forgetRecentRoom('ABC234')",c2);
 assert.equal(API.list().length,0);
 assert(html.includes('/recent_rooms.js?v=1'));
-assert(html.includes('main.js?v=29'));
+assert(/main\.js\?v=\d+/.test(html));
+assert(html.indexOf('/recent_rooms.js')>=0);
+assert(html.indexOf('/recent_rooms.js')<html.indexOf('/main.js'),
+       'recent-room storage must load before main.js');
 
 // When a user resumes in another tab, the displaced tab must stop retrying.
 const artSource=fs.readFileSync(__dirname+'/public/echa.js','utf8');
