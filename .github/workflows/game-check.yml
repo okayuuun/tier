@@ -6,6 +6,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testing_only
+          POSTGRES_DB: nakami_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nakami_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -49,6 +63,10 @@ jobs:
         run: python live/test_milli.py
       - name: Test anonymous episode game
         run: python live/test_episode.py
+      - name: Test real PostgreSQL restart snapshots and recovery
+        env:
+          TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
+        run: python live/test_room_store_postgres.py
       - name: Test full multiplayer WebSocket connection and resume
         run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
