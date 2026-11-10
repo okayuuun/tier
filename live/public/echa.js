@@ -104,6 +104,17 @@ async function copyInvite(){
  catch(_){prompt('招待URLをコピーしてください',url)}
 }
 $('ec-copy').addEventListener('click',copyInvite);
+let cloudSaveInFlight=false;
+$('ec-save-cloud').addEventListener('click',()=>{
+ if(cloudSaveInFlight)return;
+ if(!connected()){
+  $('ec-save-result').textContent='⚠️ 未接続のため保存確認できません。再接続後にお試しください。';return
+ }
+ cloudSaveInFlight=true;
+ $('ec-save-cloud').disabled=true;
+ $('ec-save-result').textContent='☁️ クラウドへの書き込み完了を確認しています…';
+ send({type:'save_now'});
+});
 $('ec-rejoin').addEventListener('click',()=>{if(code)connectRoom($('ec-name').value.trim()||storedName()||'ゲスト')});
 async function createRoom(){
  const name=$('ec-name').value.trim();
@@ -188,6 +199,11 @@ function connectRoom(name,isRetry=false){
   if(ws!==socket)return;
   clearTimeout(handshakeTimer);handshakeTimer=null;
   clearInterval(pingTimer);pingTimer=null;
+  if(cloudSaveInFlight){
+   cloudSaveInFlight=false;
+   $('ec-save-cloud').disabled=false;
+   $('ec-save-result').textContent='⚠️ 保存確認中に通信が切れました。再接続後にもう一度お試しください。';
+  }
   try{sessionStorage.setItem('nk_echa_last_disconnect',
    new Date().toLocaleString('ja-JP')+' / code '+ev.code)}catch(_){}
   if(ev.code===1000&&ev.reason==='replaced'){
@@ -223,6 +239,16 @@ window.addEventListener('online',()=>{
  if(retryWanted&&!handedOffToOtherTab&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
 });
 function onMessage(d){
+ if(d.type==='save_status'){
+  cloudSaveInFlight=false;
+  $('ec-save-cloud').disabled=false;
+  const clock=d.ok&&Number.isFinite(d.at)
+   ?new Date(d.at*1000).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+  $('ec-save-result').textContent=d.ok
+   ?'✅ '+clock+' にクラウドへの保存完了を確認しました。'
+   :'⚠️ '+(d.message||'クラウドへの保存を確認できませんでした。');
+  return;
+ }
  if(d.type==='error'){
   alertUI(d.message);
   if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
@@ -247,6 +273,12 @@ function onMessage(d){
  }
  if(d.type==='snapshot'){
   code=d.code;myId=d.me;owner=d.owner;
+  if(cloudSaveInFlight){
+   $('ec-save-result').textContent='⚠️ 保存確認中に再接続しました。もう一度保存を確認してください。';
+  }
+  cloudSaveInFlight=false;
+  $('ec-save-cloud').disabled=false;
+  $('ec-save-cloud').hidden=d.persistence==='memory';
   const restoring=lastConnected;
   retryWanted=true;lastConnected=true;reconnectAttempt=0;stopNetworkTimers();
   lastPongAt=Date.now();

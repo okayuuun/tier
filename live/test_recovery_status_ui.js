@@ -11,6 +11,8 @@ assert(gameHtml.includes('id="connection-guide"'));
 assert(artHtml.includes('id="ec-connection-help"'));
 assert(artHtml.includes('id="ec-restored-note"'));
 assert(artHtml.includes('id="ec-save-hint"'));
+assert(artHtml.includes('id="ec-save-cloud"'));
+assert(artHtml.includes('id="ec-save-result"'));
 const statusEl={innerHTML:''},guideEl={hidden:true,textContent:''};
 const context={room:{code:'AB12CD',owner:'p1',phase:'lobby',game:'tier',
  retentionHours:72,restoredAt:1731240000,persistence:'postgres'},me:'p1',
