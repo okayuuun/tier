@@ -11,6 +11,28 @@ import logging
 import os
 import time
 import zlib
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+
+def normalize_postgres_dsn(dsn):
+    """Accept Neon's standard Connect URL with asyncpg.
+
+    Neon may append channel_binding=require. asyncpg doesn't recognize this
+    libpq option and forwards unknown query parameters as PostgreSQL server
+    settings, resulting in a startup failure. It supports sslmode, so retain
+    SSL/TLS while omitting only the unsupported channel_binding option.
+    Never display or log the returned URL: it contains a DB password.
+    """
+    parsed = urlsplit(dsn)
+    if parsed.scheme not in ("postgres", "postgresql"):
+        return dsn
+    options = parse_qsl(parsed.query, keep_blank_values=True)
+    if not any(key == "channel_binding" for key, _ in options):
+        return dsn
+    retained = [(key, value) for key, value in options
+                if key != "channel_binding"]
+    return urlunsplit(parsed._replace(query=urlencode(retained)))
+
 
 LOG = logging.getLogger("nakami.rooms")
 GAME_TTL = 24 * 3600
@@ -101,7 +123,8 @@ def deserialize_room(kind, blob):
 
 class RoomStore:
     def __init__(self, dsn=None, *, delay=0.35):
-        self.dsn = dsn if dsn is not None else os.environ.get("ROOM_DATABASE_URL", "")
+        self.dsn = normalize_postgres_dsn(
+            dsn if dsn is not None else os.environ.get("ROOM_DATABASE_URL", ""))
         self.enabled = bool(self.dsn)
         self.delay = delay
         self.pool = None
