@@ -93,6 +93,8 @@ jobs:
         run: node live/test_echa_bucket_render.js
       - name: Test echa client layer compositing and timelapse
         run: node live/test_echa_client.js
+      - name: Test recent game sessions, opt-in resume, expiry and privacy clearing
+        run: node live/test_recent_game_sessions.js
       - name: Test multiplayer player count filters
         run: node live/test_game_filters.js
       - name: Import game modules

@@ -72,13 +72,51 @@ function manualReconnect(){
  retryAttempt=0;connecting=false;openSocket()
 }
 function send(obj){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));else alert('接続が切れています。再接続をお待ちください')}
-function landing(){let code=new URLSearchParams(location.search).get('room')||'';app.innerHTML=`<section class="hero"><div class="kicker">REALTIME / みんなで参加</div><h1>予想が当たると、<br>もっと仲良くなる。</h1><p class="lead">各自が秘密の正解を決め、順番に主役になろう。ほかの全員がその人の答えを予想して、まとめて答え合わせ！</p></section><div class="nk-landing-modes"><a class="nk-mode-card" href="/studio"><strong>✏️ ひとりで作る・出題する</strong><small>自作ゲーム、友達に出すリンク、プロフィール、保存データ</small></a><a class="nk-mode-card" href="#join-lobby" onclick="document.getElementById('nickname')?.focus()"><strong>👥 みんなで遊ぶ</strong><small>ルームを作って、友達とリアルタイム参加</small></a></div><div class="nk-my-profile">${NKM.avatarHTML(NKM.profile(),38)} <b>${esc(NKM.profile().name||'ゲスト')}</b> <a href="/studio">アイコン・名前を設定</a></div><div class="nk-landing-modes"><a class="nk-mode-card" href="/profile-maker"><strong>🌈 自由なプロフィールを作る</strong><small>色・画像・カード・項目・レイアウトを自分好みに編集して友達に共有！</small></a><a class="nk-mode-card" href="/echa"><strong>🎨 みんなの絵チャ</strong><small>広い共同キャンバスに同時お絵描き。全体PNG・タイムラプス動画保存も！</small></a></div>${recentEchaLink()}<div data-master-game="millishira" class="nk-landing-modes"><a class="nk-mode-card" href="/milli"><strong>🖼️ キャラクター・ミリしら</strong><small>キャラ画像と自由な質問で、友達に設定を想像してもらおう</small></a></div>${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).map(([k,d])=>`<div class="game-option" data-game-key="${k}" data-master-game="${k}"><div class="card"><span>${d.icon}</span><strong>${d.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${d.desc}</small></div><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 ルールを見る</button></div>`).join('')}</div>${panel('START / ルーム参加','友達といっしょに遊ぼう',`<label id="join-lobby" class="labeled">あなたのニックネーム</label><input id="nickname" class="field" maxlength="24" placeholder="例：おかゆ" value="${esc(sessionStorage.getItem('nakami_name')||NKM.profile().name||'')}"><label class="labeled">ルームコード（友達の部屋に入る場合）</label><input id="roomcode" class="field" maxlength="6" value="${esc(code.toUpperCase())}" placeholder="例：AB12CD" autocapitalize="characters"><div class="btns">${action('新しい部屋を作る','connectNow("create")')}${action('ルームに参加する','connectNow("join")','alt')}</div><div class="notice">2人以上で遊べます。公開後はURLを送るだけで各自のスマホから参加可能。公開前は同じPCやLAN上で動作確認できます。参加中の操作・ゲーム結果はルーム管理者とは別のサイト管理者が履歴として確認でき、ニックネーム・時刻・得点などが一定期間記録されます。</div><p id="err" class="error" hidden></p>`)}`;status('未接続',false);applyGameFilters()}
+// Only an explicit Continue action reuses the saved player identity.
+function recentGameSection(){
+ const items=window.NKRecent?.list()||[];
+ if(!items.length)return '';
+ const cards=items.map(item=>{
+  const remaining=Math.max(1,Math.ceil((item.expiresAt-Date.now())/3600000));
+  const period=remaining>=24?Math.ceil(remaining/24)+'日以内':remaining+'時間以内';
+  const continueCall="continueRecentRoom('"+item.code+"')";
+  return '<div class="nk-recent-game-row"><div><strong>'+esc(item.title)+'</strong>'+
+    '<small>ルーム '+esc(item.code)+' · '+esc(item.name)+' · 復元可能期間の目安：'+period+'</small></div>'+
+    '<div class="nk-recent-game-controls">'+action('▶ 続きから再開',continueCall,'gold')+
+    '<button type="button" class="nk-forget-recent" onclick="forgetRecentRoom(\''+item.code+'\')">履歴を消す</button></div></div>'
+ }).join('');
+ return '<section class="nk-recent-games"><h2>🕘 最近参加したルーム</h2>'+
+  '<p>この端末で以前の参加者として再開できます。保存期限内でも、部屋を退出・削除した場合は戻れません。</p>'+
+  cards+'<p class="nk-recent-privacy">この端末に復帰情報を保存します。共有端末では「履歴を消す」を使ってください。</p></section>'
+}
+function continueRecentRoom(code){
+ const saved=window.NKRecent?.get(code);
+ if(!saved)return error('このルームの復帰情報がありません。コードから参加してください。');
+ try{
+  sessionStorage.setItem('nakami_sid_'+saved.code,saved.sid);
+  sessionStorage.setItem('nakami_name',saved.name);
+ }catch(_){return error('このブラウザでは復帰情報を利用できません。設定を確認してください。')}
+ playerName=saved.name;
+ connectCode=saved.code;
+ pendingAction='join';
+ retryAttempt=0;
+ clearTimeout(retryTimer);
+ openSocket();
+}
+function forgetRecentRoom(code){
+ window.NKRecent?.forget(code);
+ landing();
+}
+function landing(){let code=new URLSearchParams(location.search).get('room')||'';app.innerHTML=`<section class="hero"><div class="kicker">REALTIME / みんなで参加</div><h1>予想が当たると、<br>もっと仲良くなる。</h1><p class="lead">各自が秘密の正解を決め、順番に主役になろう。ほかの全員がその人の答えを予想して、まとめて答え合わせ！</p></section><div class="nk-landing-modes"><a class="nk-mode-card" href="/studio"><strong>✏️ ひとりで作る・出題する</strong><small>自作ゲーム、友達に出すリンク、プロフィール、保存データ</small></a><a class="nk-mode-card" href="#join-lobby" onclick="document.getElementById('nickname')?.focus()"><strong>👥 みんなで遊ぶ</strong><small>ルームを作って、友達とリアルタイム参加</small></a></div><div class="nk-my-profile">${NKM.avatarHTML(NKM.profile(),38)} <b>${esc(NKM.profile().name||'ゲスト')}</b> <a href="/studio">アイコン・名前を設定</a></div><div class="nk-landing-modes"><a class="nk-mode-card" href="/profile-maker"><strong>🌈 自由なプロフィールを作る</strong><small>色・画像・カード・項目・レイアウトを自分好みに編集して友達に共有！</small></a><a class="nk-mode-card" href="/echa"><strong>🎨 みんなの絵チャ</strong><small>広い共同キャンバスに同時お絵描き。全体PNG・タイムラプス動画保存も！</small></a></div>${recentGameSection()}${recentEchaLink()}<div data-master-game="millishira" class="nk-landing-modes"><a class="nk-mode-card" href="/milli"><strong>🖼️ キャラクター・ミリしら</strong><small>キャラ画像と自由な質問で、友達に設定を想像してもらおう</small></a></div>${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).map(([k,d])=>`<div class="game-option" data-game-key="${k}" data-master-game="${k}"><div class="card"><span>${d.icon}</span><strong>${d.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${d.desc}</small></div><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 ルールを見る</button></div>`).join('')}</div>${panel('START / ルーム参加','友達といっしょに遊ぼう',`<label id="join-lobby" class="labeled">あなたのニックネーム</label><input id="nickname" class="field" maxlength="24" placeholder="例：おかゆ" value="${esc(sessionStorage.getItem('nakami_name')||NKM.profile().name||'')}"><label class="labeled">ルームコード（友達の部屋に入る場合）</label><input id="roomcode" class="field" maxlength="6" value="${esc(code.toUpperCase())}" placeholder="例：AB12CD" autocapitalize="characters"><div class="btns">${action('新しい部屋を作る','connectNow("create")')}${action('ルームに参加する','connectNow("join")','alt')}</div><div class="notice">2人以上で遊べます。公開後はURLを送るだけで各自のスマホから参加可能。公開前は同じPCやLAN上で動作確認できます。参加中の操作・ゲーム結果はルーム管理者とは別のサイト管理者が履歴として確認でき、ニックネーム・時刻・得点などが一定期間記録されます。</div><p id="err" class="error" hidden></p>`)}`;status('未接続',false);applyGameFilters()}
 function error(msg){let e=document.getElementById('err');if(e){e.hidden=false;e.textContent=msg}else{let target=document.querySelector('.body');if(target)target.insertAdjacentHTML('afterbegin',`<p class="error">${esc(msg)}</p>`);else alert(msg)}}
 function connectNow(kind){playerName=document.getElementById('nickname').value.trim().slice(0,24);if(!playerName)return error('ニックネームを入力してください');let code=document.getElementById('roomcode').value.trim().toUpperCase();if(kind==='join'&&!/^[A-Z2-9]{6}$/.test(code))return error('6桁のルームコードを入力してください');sessionStorage.setItem('nakami_name',playerName);const pr=NKM.profile();if(pr.name!==playerName)NKM.saveProfile({...pr,name:playerName});connectCode=kind==='join'?code:'';pendingAction=kind;retryAttempt=0;clearTimeout(retryTimer);openSocket()}
 function multiplayerRoomLost(message){
  clearTimeout(retryTimer);clearInterval(pingTimer);clearHandshake();
  retryAttempt=0;connecting=false;
  const oldCode=room?.code||connectCode;
+ // Only a missing room is truly gone. Do not remove credentials for a
+ // rejected newcomer after the game has already started.
+ if(/そのルームは見つかりません/.test(message))window.NKRecent?.forget(oldCode);
  pendingAction='';connectCode='';room=null;me=null;
  if(ws){
   const previous=ws;
@@ -88,7 +126,7 @@ function multiplayerRoomLost(message){
  }
  history.replaceState(null,'',location.pathname);
  landing();
- error(message.includes('ゲーム開始後')?'このルームはすでにゲームが始まっているため、新しい参加者は入れません。主催者が待機画面に戻ってから参加するか、新しい部屋を作ってください。':'ルーム'+(oldCode?'（'+oldCode+'）':'')+'はサーバーの再起動などで使えなくなりました。下の「新しい部屋を作る」から作り直して、招待URLを友達に送ってください。')
+ error(message.includes('ゲーム開始後')?'このルームはすでにゲームが始まっているため、新しい参加者は入れません。主催者が待機画面に戻ってから参加するか、新しい部屋を作ってください。':'ルーム'+(oldCode?'（'+oldCode+'）':'')+'が見つかりません。保存期間終了や部屋の削除などが考えられます。下の「新しい部屋を作る」から作り直してください。')
 }
 function openSocket(){
  if(connecting)return;
@@ -146,7 +184,12 @@ if(obj.type!=='state')return;
    try{socket.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
  status('接続中',true);
- room=obj.room;PUBLIC_GAMES=room.publicGames||PUBLIC_GAMES;me=obj.me;if(room.phase==='final'){const myScore=room.players?.find(p=>p.id===me)?.score??0;NKM.remember({key:'room_'+room.code+'_'+room.matchNo,game:room.game,title:GAMES[room.game]?.title||room.game,info:myScore+'点 · '+(room.players?.length||0)+'人参加'})}let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));render()};
+ room=obj.room;PUBLIC_GAMES=room.publicGames||PUBLIC_GAMES;me=obj.me;if(room.phase==='final'){const myScore=room.players?.find(p=>p.id===me)?.score??0;NKM.remember({key:'room_'+room.code+'_'+room.matchNo,game:room.game,title:GAMES[room.game]?.title||room.game,info:myScore+'点 · '+(room.players?.length||0)+'人参加'})}let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));
+ try{window.NKRecent?.remember({code,sid:sessionStorage.getItem('nakami_sid_'+code),
+   name:room.players?.find(p=>p.id===me)?.name||playerName,
+   game:room.game,title:GAMES[room.game]?.title||'ゲーム',
+   retentionHours:room.retentionHours})}catch(_){}
+ render()};
 
  socket.onclose=ev=>{
   if(ws!==socket)return;
@@ -200,6 +243,7 @@ function roomBar(){
 function endGame(){if(confirm('このゲームをここで終了し、全員に途中結果を表示しますか？'))send({type:'end'})}
 function leaveToTitle(){
  if(room&&room.phase!=='final'&&!confirm('ルームから退出してタイトルに戻りますか？ ほかの人のゲームは続きます。'))return;
+ if(room)window.NKRecent?.forget(room.code);
  clearTimeout(retryTimer);clearInterval(pingTimer);clearHandshake();retryAttempt=0;pendingAction='';connectCode='';
  if(ws){try{ws.onclose=null;ws.onmessage=null;if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'leave'}));ws.close()}catch{}}
  ws=null;room=null;me=null;connecting=false;draft=null;topicDraft=null;selectedRound=0;activeCompare=null;
