@@ -67,6 +67,10 @@ jobs:
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
         run: python live/test_room_store_postgres.py
+      - name: Test complete server restart with restored games and echa rooms
+        env:
+          TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
+        run: python live/test_room_restart_integration.py
       - name: Test full multiplayer WebSocket connection and resume
         run: python live/test_multiplayer_socket.py
       - name: Test collaborative art chat rooms
