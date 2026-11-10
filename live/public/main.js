@@ -216,7 +216,7 @@ if(obj.type!=='state')return;
    try{socket.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
  status('接続中',true);
- if(room&&room.code!==obj.room.code){cloudSaveNotice='';cloudSavePending=false}
+ if(!room||room.code!==obj.room.code){cloudSaveNotice='';cloudSavePending=false}
   room=obj.room;PUBLIC_GAMES=room.publicGames||PUBLIC_GAMES;me=obj.me;if(room.phase==='final'){const myScore=room.players?.find(p=>p.id===me)?.score??0;NKM.remember({key:'room_'+room.code+'_'+room.matchNo,game:room.game,title:GAMES[room.game]?.title||room.game,info:myScore+'点 · '+(room.players?.length||0)+'人参加'})}let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));
  try{window.NKRecent?.remember({code,sid:sessionStorage.getItem('nakami_sid_'+code),
    name:room.players?.find(p=>p.id===me)?.name||playerName,

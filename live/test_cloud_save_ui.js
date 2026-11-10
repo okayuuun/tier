@@ -10,6 +10,8 @@ function section(s,a,b) {
  assert(i>=0&&j>i,'missing section '+a);return s.slice(i,j);
 }
 assert(index.includes('nk-cloud-save-result'));
+assert(main.includes("if(!room||room.code!==obj.room.code){cloudSaveNotice='';cloudSavePending=false}"),
+ 'new rooms must not inherit the previous room\'s save confirmation');
 assert(artHtml.includes('id="ec-save-cloud"'));
 assert(artHtml.includes('id="ec-save-result"'));
 const gameMsg={textContent:''};
