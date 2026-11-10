@@ -56,8 +56,11 @@ GAME_RETENTION_HOURS = retention_hours("GAME_ROOM_RETENTION_HOURS", 72, 336)
 ART_RETENTION_HOURS = retention_hours("ECHA_ROOM_RETENTION_HOURS", 168, 720)
 GAME_TTL = GAME_RETENTION_HOURS * 3600
 ART_TTL = ART_RETENTION_HOURS * 3600
-MAX_UNCOMPRESSED_BYTES = 12_000_000
-MAX_COMPRESSED_BYTES = 5_000_000
+# Safety bounds for one PostgreSQL snapshot, NOT a limit on drawn strokes.
+# Large canvases need enough headroom for many thousands of small pen marks.
+# There is no fixed art-stroke count cap; hosting resources are still finite.
+MAX_UNCOMPRESSED_BYTES = 64_000_000
+MAX_COMPRESSED_BYTES = 24_000_000
 SCHEMA_VERSION = 1
 _PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask", "_restoredAt"))
 
@@ -125,14 +128,13 @@ def deserialize_room(kind, blob):
         for key in ("strokes", "layers", "identities", "messages", "drawing"):
             if key not in room:
                 raise ValueError("Incomplete art room")
-        if len(room["strokes"]) > 1600 or len(room["identities"]) > 60:
-            raise ValueError("Invalid restored art history")
+        if len(room["identities"]) > 60:
+            raise ValueError("Invalid restored art participants")
         # Preserve any still-in-progress brush work at restart, then treat it
         # as completed so a reconnect cannot start with an orphaned stroke.
         for stroke in room["drawing"].values():
-            if len(room["strokes"]) < 1600:
-                room["strokes"].append(stroke)
-                room["version"] += 1
+            room["strokes"].append(stroke)
+            room["version"] += 1
         room["drawing"] = {}
         room["members"] = {}
         room["notifyLock"] = asyncio.Lock()
