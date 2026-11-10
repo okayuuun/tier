@@ -46,7 +46,15 @@ function status(text,isOn){
  const retry=!isOn&&!!(room||connectCode||pendingAction);
  document.getElementById('status').innerHTML=
   `<span class="status"><span class="dot ${isOn?'online':''}"></span>${esc(text)}</span>`+
-  (retry?'<button type="button" class="nk-retry-connect" onclick="manualReconnect()">↻ 再接続</button>':'')
+  (retry?'<button type="button" class="nk-retry-connect" onclick="manualReconnect()">↻ 再接続</button>':'');
+ const guide=document.getElementById('connection-guide');
+ if(!guide)return;
+ guide.hidden=!retry;
+ if(retry)guide.textContent=navigator.onLine===false?
+  '📶 インターネットに接続されていません。Wi-Fiまたはモバイル通信を確認してください。接続が戻ると再参加します。':
+  retryAttempt>=3?
+  '⚠️ 接続に時間がかかっています。通信環境を確認し、画面上部の「↻ 再接続」をお試しください。送信途中の回答は復帰後に確認してください。':
+  '🔄 接続を回復しています。ページを閉じずにお待ちください。操作は接続が戻ってから行ってください。';
 }
 function clearHandshake(){clearTimeout(handshakeTimer);handshakeTimer=null}
 function armHandshake(socket,ms){
@@ -177,8 +185,17 @@ async function copyRoomCode(){
 }
 async function copyInvite(){let v=invite();try{await navigator.clipboard.writeText(v);alert('招待リンクをコピーしました')}catch{prompt('このリンクをコピーしてください',v)}}
 function roomBar(){
- const host=room.owner===me && room.phase!=='lobby' && room.phase!=='final';
- return `<div class="banner"><div><div class="kicker">ROOM CODE</div><div class="code">${esc(room.code)}</div></div><div class="headtools">${action('招待URL','copyInvite()','gold')}${action('コードをコピー','copyRoomCode()','alt')}<a href="/studio" class="btn alt nk-studio-small">✏️ ゲーム制作・自分のデータ</a>${action('📖 ルールを見る',`openRules('${room.game}')`,'alt')}${action('タイトルへ戻る','leaveToTitle()','alt')}${host?action('ゲームを終了','endGame()','exit'):''}</div></div>`;
+ const host=room.owner===me&&room.phase!=='lobby'&&room.phase!=='final';
+ const hrs=Number(room.retentionHours)||0;
+ const lifetime=hrs>=24?Math.round(hrs/24)+'日':hrs+'時間';
+ const saved=room.persistence==='postgres'
+  ?'☁️ この部屋は最終操作から約'+lifetime+'、復元できる状態で保存されます。'
+  :room.persistence==='degraded'
+  ?'⚠️ 保存先との通信に問題があります。復旧まで最近の操作が保存されない可能性があります。'
+  :'ℹ️ 現在のルームは一時保存です。サーバー再起動で失われる場合があります。';
+ const recovered=room.restoredAt?
+  '<div class="nk-restore-notice" role="status">✅ サーバー再起動後、保存されたルームを復元しました。直前の一部操作は保存されていない場合があります。</div>':'';
+ return `<div class="banner"><div><div class="kicker">ROOM CODE</div><div class="code">${esc(room.code)}</div></div><div class="headtools">${action('招待URL','copyInvite()','gold')}${action('コードをコピー','copyRoomCode()','alt')}<a href="/studio" class="btn alt nk-studio-small">✏️ ゲーム制作・自分のデータ</a>${action('📖 ルールを見る',`openRules('${room.game}')`,'alt')}${action('タイトルへ戻る','leaveToTitle()','alt')}${host?action('ゲームを終了','endGame()','exit'):''}</div></div>${recovered}<div class="nk-storage-hint">${esc(saved)}</div>`;
 }
 function endGame(){if(confirm('このゲームをここで終了し、全員に途中結果を表示しますか？'))send({type:'end'})}
 function leaveToTitle(){
