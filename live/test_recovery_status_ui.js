@@ -15,6 +15,7 @@ const statusEl={innerHTML:''},guideEl={hidden:true,textContent:''};
 const context={room:{code:'AB12CD',owner:'p1',phase:'lobby',game:'tier',
  retentionHours:72,restoredAt:1731240000,persistence:'postgres'},me:'p1',
  retryAttempt:0,connectCode:'AB12CD',pendingAction:'join',
+ cloudSaveNotice:'',cloudSavePending:false,
  navigator:{onLine:false},document:{getElementById(id){
  return id==='status'?statusEl:id==='connection-guide'?guideEl:null}},
  esc(value){return String(value??'')},action(title){return '<button>'+title+'</button>'}};
@@ -35,6 +36,8 @@ assert.equal(guideEl.hidden,true);
 let banner=vm.runInContext('roomBar()',context);
 assert.match(banner,/復元しました/);
 assert.match(banner,/3日/);
+assert.match(banner,/今すぐ保存/);
+assert.match(banner,/nk-cloud-save-status/);
 context.room.persistence='degraded';
 banner=vm.runInContext('roomBar()',context);
 assert.match(banner,/保存先との通信に問題/);

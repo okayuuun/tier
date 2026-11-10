@@ -3,6 +3,7 @@ let PUBLIC_GAMES=null;
 function refreshVisibleCards(){document.querySelectorAll('[data-master-game]').forEach(el=>{if(!el.dataset.gameKey)el.style.display=(PUBLIC_GAMES&&!PUBLIC_GAMES.includes(el.dataset.masterGame))?'none':''});applyGameFilters()}
 const app=document.getElementById('app');let ws=null,room=null,me=null,connectCode='',playerName='',pendingAction='',draft=null,connecting=false,retryTimer=null,pingTimer=null,retryAttempt=0,handshakeTimer=null,lastPongAt=0;let desiredGame='tier',topicDraft=null,selectedRound=0,activeCompare=null;
 let replacedByAnotherTab=false;
+let cloudSavePending=false,cloudSaveNotice='';
 const GAMES={tier:{title:'みんなでティア表！',icon:'🏆',desc:'人ごとに異なるお題！主役の並びを予想'},value:{title:'これって重い？判定シート',icon:'💗',desc:'本人の3段階の価値観を当てる'},either:{title:'恋愛究極の２択',icon:'⚖️',desc:'本人ならA/Bどちらを選ぶ？'},quiz:{title:'理解度チェック',icon:'🎯',desc:'好みの答えを予想して理解度を競う'}};
 Object.assign(GAMES,{ito:{title:'ito（クモノイト）',icon:'🕸️',desc:'数字を例えて伝え、小さい順に出す協力ゲーム'},propose:{title:'たった今考えたプロポーズの言葉を君に捧ぐよ。',icon:'💍',desc:'6枚の単語を組み合わせて即興告白バトル'},soup:{title:'ウミガメのスープ',icon:'🔎',desc:'出題者に質問して、不思議な状況の真相を解こう'},akaito:{title:'ito（アカイイト）',icon:'❤️',desc:'秘密の数字の合計が100に近い相手を探す'},unique:{title:'全員不一致ゲーム',icon:'✨',desc:'同じお題に全員が違う言葉で答える協力ゲーム'},wolf:{title:'ワードウルフ',icon:'🐺',desc:'自分だけ違う言葉を持つ少数派を会話から探す'}});
 Object.assign(GAMES,{
@@ -74,6 +75,25 @@ function manualReconnect(){
  retryAttempt=0;connecting=false;openSocket()
 }
 function send(obj){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));else alert('接続が切れています。再接続をお待ちください')}
+function showCloudSaveNotice(){
+ const node=document.getElementById('nk-cloud-save-status');
+ if(node)node.textContent=cloudSaveNotice;
+}
+function saveGameNow(){
+ if(!room||cloudSavePending)return;
+ if(!ws||ws.readyState!==WebSocket.OPEN){
+  cloudSaveNotice='⚠️ 未接続のため保存確認ができません。再接続後にお試しください。';
+  showCloudSaveNotice();return;
+ }
+ if(room.persistence==='memory'){
+  cloudSaveNotice='⚠️ データベース未設定のため保存できません。';
+  showCloudSaveNotice();return;
+ }
+ cloudSavePending=true;
+ cloudSaveNotice='☁️ クラウドへの書き込み完了を確認しています…';
+ showCloudSaveNotice();
+ send({type:'save_now'});
+}
 // Only an explicit Continue action reuses the saved player identity.
 function recentGameSection(){
  const items=window.NKRecent?.list()||[];
@@ -165,6 +185,15 @@ function openSocket(){
   }
   return error(obj.message)
  }
+if(obj.type==='save_status'){
+ cloudSavePending=false;
+ const clock=obj.ok&&Number.isFinite(obj.at)
+  ?new Date(obj.at*1000).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'';
+ cloudSaveNotice=obj.ok
+  ?'✅ '+clock+' にクラウドへの保存を確認しました。'
+  :'⚠️ '+(obj.message||'保存完了を確認できませんでした。');
+ showCloudSaveNotice();return;
+}
 if(obj.type==='example'){
  if(room && room.phase==='compose' && room.game===obj.game && room.matchNo===obj.matchNo){
    const d=getTopicDraft();
@@ -187,7 +216,8 @@ if(obj.type!=='state')return;
    try{socket.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
  status('接続中',true);
- room=obj.room;PUBLIC_GAMES=room.publicGames||PUBLIC_GAMES;me=obj.me;if(room.phase==='final'){const myScore=room.players?.find(p=>p.id===me)?.score??0;NKM.remember({key:'room_'+room.code+'_'+room.matchNo,game:room.game,title:GAMES[room.game]?.title||room.game,info:myScore+'点 · '+(room.players?.length||0)+'人参加'})}let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));
+ if(room&&room.code!==obj.room.code){cloudSaveNotice='';cloudSavePending=false}
+  room=obj.room;PUBLIC_GAMES=room.publicGames||PUBLIC_GAMES;me=obj.me;if(room.phase==='final'){const myScore=room.players?.find(p=>p.id===me)?.score??0;NKM.remember({key:'room_'+room.code+'_'+room.matchNo,game:room.game,title:GAMES[room.game]?.title||room.game,info:myScore+'点 · '+(room.players?.length||0)+'人参加'})}let code=room.code;let creatingSid=sessionStorage.getItem('nakami_sid_creating');if(creatingSid){sessionStorage.setItem('nakami_sid_'+code,creatingSid);sessionStorage.removeItem('nakami_sid_creating')}connectCode=code;history.replaceState(null,'',location.pathname+'?room='+encodeURIComponent(code));
  try{window.NKRecent?.remember({code,sid:sessionStorage.getItem('nakami_sid_'+code),
    name:room.players?.find(p=>p.id===me)?.name||playerName,
    game:room.game,title:GAMES[room.game]?.title||'ゲーム',
@@ -206,6 +236,11 @@ if(obj.type!=='state')return;
    clearTimeout(retryTimer);retryTimer=null;
    status('同じ参加者が別のタブで接続中です。このタブで遊ぶなら「↻ 再接続」を押してください',false);
    return
+  }
+  if(cloudSavePending){
+   cloudSavePending=false;
+   cloudSaveNotice='⚠️ 保存確認中に通信が切れました。再接続後に保存を確認してください。';
+   showCloudSaveNotice();
   }
   if(room||connectCode||pendingAction){
    const delay=Math.min(20000,1200*Math.pow(2,Math.min(retryAttempt,4)))+
@@ -247,14 +282,17 @@ function roomBar(){
   :room.persistence==='degraded'
   ?'⚠️ 保存先との通信に問題があります。復旧まで最近の操作が保存されない可能性があります。'
   :'ℹ️ 現在のルームは一時保存です。サーバー再起動で失われる場合があります。';
+ const cloudButton=room.persistence==='memory'?''
+  :action(cloudSavePending?'☁️ 確認中…':'☁️ 今すぐ保存','saveGameNow()','alt');
  const recovered=room.restoredAt?
   '<div class="nk-restore-notice" role="status">✅ サーバー再起動後、保存されたルームを復元しました。直前の一部操作は保存されていない場合があります。</div>':'';
- return `<div class="banner"><div><div class="kicker">ROOM CODE</div><div class="code">${esc(room.code)}</div></div><div class="headtools">${action('招待URL','copyInvite()','gold')}${action('コードをコピー','copyRoomCode()','alt')}<a href="/studio" class="btn alt nk-studio-small">✏️ ゲーム制作・自分のデータ</a>${action('📖 ルールを見る',`openRules('${room.game}')`,'alt')}${action('タイトルへ戻る','leaveToTitle()','alt')}${host?action('ゲームを終了','endGame()','exit'):''}</div></div>${recovered}<div class="nk-storage-hint">${esc(saved)}</div>`;
+ return `<div class="banner"><div><div class="kicker">ROOM CODE</div><div class="code">${esc(room.code)}</div></div><div class="headtools">${action('招待URL','copyInvite()','gold')}${action('コードをコピー','copyRoomCode()','alt')}${cloudButton}<a href="/studio" class="btn alt nk-studio-small">✏️ ゲーム制作・自分のデータ</a>${action('📖 ルールを見る',`openRules('${room.game}')`,'alt')}${action('タイトルへ戻る','leaveToTitle()','alt')}${host?action('ゲームを終了','endGame()','exit'):''}</div></div>${recovered}<div class="nk-storage-hint">${esc(saved)}</div><div id="nk-cloud-save-status" class="nk-cloud-save-result" role="status" aria-live="polite">${esc(cloudSaveNotice)}</div>`;
 }
 function endGame(){if(confirm('このゲームをここで終了し、全員に途中結果を表示しますか？'))send({type:'end'})}
 function leaveToTitle(){
  if(room&&room.phase!=='final'&&!confirm('ルームから退出してタイトルに戻りますか？ ほかの人のゲームは続きます。'))return;
  if(room)window.NKRecent?.forget(room.code);
+ cloudSavePending=false;cloudSaveNotice='';
  replacedByAnotherTab=false;
  clearTimeout(retryTimer);clearInterval(pingTimer);clearHandshake();retryAttempt=0;pendingAction='';connectCode='';
  if(ws){try{ws.onclose=null;ws.onmessage=null;if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'leave'}));ws.close()}catch{}}
