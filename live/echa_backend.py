@@ -10,6 +10,7 @@ import re
 import secrets
 import time
 from aiohttp import web
+from room_store import store as ROOM_STORE, ART_TTL
 
 LOGGER = logging.getLogger("nakami.echa")
 ROOMS = {}
@@ -23,7 +24,7 @@ MAX_POINTS = 320
 MAX_MESSAGES = 65
 MAX_FILLS = 120  # expensive pixel operations; cap per room
 FILL_COOLDOWN = 0.65  # seconds, per participant
-ROOM_TTL = 6 * 3600
+ROOM_TTL = ART_TTL if ROOM_STORE.enabled else 6 * 3600
 STYLE_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
 
 
@@ -92,6 +93,7 @@ def clean_old():
                if now-room['last']>ROOM_TTL and not room['members']]
     for code in expired:
         del ROOMS[code]
+        ROOM_STORE.delete("art", code)
 
 
 def clean_point(x):
@@ -123,6 +125,7 @@ def public_members(room):
 
 async def notify(room, payload, exclude=None):
     """Preserve event order while sending to peers concurrently and with bounds."""
+    ROOM_STORE.mark("art", room)
     wire=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
     async with room.setdefault('notifyLock', asyncio.Lock()):
         sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
@@ -155,6 +158,7 @@ def new_room():
                  'layers':[new_layer('base','レイヤー 1')], 'layerSeq':1,
                  'fillLast':{}, 'identities':{},
                  'created':time.time()}
+    ROOM_STORE.mark("art", ROOMS[code])
     return code,token
 
 
@@ -240,6 +244,9 @@ async def route_ws(request):
                 room['last']=time.time()
                 member=room['members'][ws]
                 if action=='ping':
+                    if room['last']-room.get('_heartbeatSavedAt',0)>600:
+                        room['_heartbeatSavedAt']=room['last']
+                        ROOM_STORE.mark("art", room)
                     await ws.send_json({'type':'pong','at':time.time()})
                 elif action=='begin':
                     if player_id in room['drawing']:

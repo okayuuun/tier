@@ -1,0 +1,249 @@
+"""Optional PostgreSQL-backed durable snapshots for game and art-chat rooms.
+
+Set ROOM_DATABASE_URL to enable. Without it, the existing in-memory service
+works unchanged. Never write credentials or room secrets to logs/public JSON.
+Restoring sockets is impossible: websocket clients reconnect and reuse their
+own session/resume credentials against reconstructed room state.
+"""
+import asyncio
+import json
+import logging
+import os
+import time
+import zlib
+
+LOG = logging.getLogger("nakami.rooms")
+GAME_TTL = 24 * 3600
+ART_TTL = 48 * 3600
+MAX_UNCOMPRESSED_BYTES = 12_000_000
+MAX_COMPRESSED_BYTES = 5_000_000
+SCHEMA_VERSION = 1
+_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask"))
+
+
+def _clean(value):
+    if isinstance(value, dict):
+        return {str(key): _clean(item) for key, item in value.items()
+                if key not in _PRIVATE_RUNTIME_KEYS and key != "members"}
+    if isinstance(value, (list, tuple)):
+        return [_clean(item) for item in value]
+    if isinstance(value, set):
+        return [_clean(item) for item in sorted(value, key=str)]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"Unserializable room state type: {type(value).__name__}")
+
+
+def serialize_room(kind, room):
+    if kind not in ("game", "art"):
+        raise ValueError("Unknown room type")
+    data = _clean(room)
+    raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
+                     ensure_ascii=False, allow_nan=False,
+                     separators=(",", ":")).encode("utf-8")
+    if len(raw) > MAX_UNCOMPRESSED_BYTES:
+        raise ValueError("Room snapshot too large to persist")
+    compressed = zlib.compress(raw, level=3)
+    if len(compressed) > MAX_COMPRESSED_BYTES:
+        raise ValueError("Compressed room snapshot is too large")
+    return compressed
+
+
+def deserialize_room(kind, blob):
+    if len(blob) > MAX_COMPRESSED_BYTES:
+        raise ValueError("Room snapshot exceeds storage limit")
+    decoder = zlib.decompressobj()
+    raw = decoder.decompress(blob, MAX_UNCOMPRESSED_BYTES + 1)
+    if len(raw) > MAX_UNCOMPRESSED_BYTES or not decoder.eof or decoder.unused_data:
+        raise ValueError("Oversized or incomplete saved room")
+    obj = json.loads(raw.decode("utf-8"))
+    if obj.get("v") != SCHEMA_VERSION or obj.get("kind") != kind:
+        raise ValueError("Unsupported snapshot schema")
+    room = obj["room"]
+    if not isinstance(room, dict):
+        raise ValueError("Invalid saved room")
+    code = room.get("code")
+    if not isinstance(code, str) or not (4 <= len(code) <= 10):
+        raise ValueError("Invalid room code in snapshot")
+    if kind == "game":
+        players = room.get("players")
+        if not isinstance(players, dict) or len(players) > 12:
+            raise ValueError("Invalid game players")
+        for p in players.values():
+            if not isinstance(p, dict):
+                raise ValueError("Invalid player data")
+            p["ws"] = None
+        room["lock"] = asyncio.Lock()
+        room.setdefault("createdAt", time.time())
+        room.setdefault("lastUsed", time.time())
+    else:
+        for key in ("strokes", "layers", "identities", "messages", "drawing"):
+            if key not in room:
+                raise ValueError("Incomplete art room")
+        if len(room["strokes"]) > 1600 or len(room["identities"]) > 60:
+            raise ValueError("Invalid restored art history")
+        # Preserve any still-in-progress brush work at restart, then treat it
+        # as completed so a reconnect cannot start with an orphaned stroke.
+        for stroke in room["drawing"].values():
+            if len(room["strokes"]) < 1600:
+                room["strokes"].append(stroke)
+                room["version"] += 1
+        room["drawing"] = {}
+        room["members"] = {}
+        room["notifyLock"] = asyncio.Lock()
+        room.setdefault("last", time.time())
+    return room
+
+
+class RoomStore:
+    def __init__(self, dsn=None, *, delay=0.35):
+        self.dsn = dsn if dsn is not None else os.environ.get("ROOM_DATABASE_URL", "")
+        self.enabled = bool(self.dsn)
+        self.delay = delay
+        self.pool = None
+        self._queue = {}
+        self._tasks = {}
+        self._versions = {}
+        self._closing = False
+        self._last_warning = 0.0
+
+    async def start(self):
+        if not self.enabled:
+            return
+        # Never log the URL: it contains the DB username and password.
+        import asyncpg
+        self.pool = await asyncpg.create_pool(dsn=self.dsn,
+                                                min_size=1, max_size=3,
+                                                timeout=10, command_timeout=10)
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS nakami_live_room_snapshots (
+                    kind TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    version BIGINT NOT NULL,
+                    data BYTEA NOT NULL,
+                    updated_at DOUBLE PRECISION NOT NULL,
+                    PRIMARY KEY(kind, code)
+                )
+            """)
+        LOG.info("PostgreSQL-backed room recovery enabled")
+
+    async def load(self):
+        if not self.enabled:
+            return {}, {}
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT kind, code, version, data, updated_at
+                   FROM nakami_live_room_snapshots
+                   WHERE updated_at > $1
+                   ORDER BY updated_at DESC LIMIT 160""",
+                time.time() - ART_TTL)
+        games, art = {}, {}
+        for item in rows:
+            kind, code = item["kind"], item["code"]
+            if kind not in ("game", "art"):
+                continue
+            ttl = GAME_TTL if kind == "game" else ART_TTL
+            if item["updated_at"] < time.time() - ttl:
+                continue
+            try:
+                room = deserialize_room(kind, bytes(item["data"]))
+                if room["code"] != code:
+                    continue
+                (games if kind == "game" else art)[code] = room
+                self._versions[(kind, code)] = item["version"]
+            except (TypeError, ValueError, KeyError, OverflowError):
+                LOG.exception("Skipping invalid %s room snapshot", kind)
+        LOG.info("Recovered %d game rooms and %d art rooms", len(games), len(art))
+        return games, art
+
+    def mark(self, kind, room):
+        """Coalesce edits to avoid a database query for every brush point."""
+        if not self.enabled or self._closing:
+            return
+        code = room.get("code")
+        if not isinstance(code, str):
+            return
+        self._enqueue(kind, code, room)
+
+    def delete(self, kind, code):
+        if not self.enabled or self._closing:
+            return
+        self._enqueue(kind, code, None)
+
+    def _enqueue(self, kind, code, room):
+        key = (kind, code)
+        version = self._versions.get(key, 0) + 1
+        self._versions[key] = version
+        self._queue[key] = (version, room)
+        if key not in self._tasks or self._tasks[key].done():
+            self._tasks[key] = asyncio.create_task(self._write_loop(key))
+
+    async def _write_loop(self, key):
+        attempts = 0
+        try:
+            await asyncio.sleep(self.delay)
+            while key in self._queue:
+                version, room = self._queue.pop(key)
+                try:
+                    await self._write_one(key, version, room)
+                    attempts = 0
+                except (Exception,):
+                    # An external DB can temporarily disconnect. Keep the
+                    # newest pending state for retry; never crash the game loop.
+                    if key not in self._queue:
+                        self._queue[key] = (version, room)
+                    attempts += 1
+                    if time.monotonic() - self._last_warning > 30:
+                        self._last_warning = time.monotonic()
+                        LOG.exception("Room snapshot storage temporarily unavailable")
+                    await asyncio.sleep(min(8, 2 ** min(attempts, 3)))
+        except asyncio.CancelledError:
+            raise
+        finally:
+            self._tasks.pop(key, None)
+
+    async def _write_one(self, key, version, room):
+        if not self.pool:
+            raise RuntimeError("Room store not started")
+        kind, code = key
+        if room is not None:
+            data = serialize_room(kind, room)
+        async with self.pool.acquire() as conn:
+            if room is None:
+                await conn.execute("""
+                    DELETE FROM nakami_live_room_snapshots
+                    WHERE kind=$1 AND code=$2 AND version <= $3
+                """, kind, code, version)
+            else:
+                await conn.execute("""
+                    INSERT INTO nakami_live_room_snapshots
+                      (kind, code, version, data, updated_at)
+                    VALUES ($1,$2,$3,$4,$5)
+                    ON CONFLICT(kind, code) DO UPDATE SET
+                      version=EXCLUDED.version, data=EXCLUDED.data,
+                      updated_at=EXCLUDED.updated_at
+                    WHERE nakami_live_room_snapshots.version <= EXCLUDED.version
+                """, kind, code, version, data, time.time())
+
+    async def flush(self):
+        if not self.enabled:
+            return
+        tasks = list(self._tasks.values())
+        if not tasks:
+            return
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 12)
+        except asyncio.TimeoutError:
+            LOG.error("Timed out flushing room snapshots: %d pending", len(self._queue))
+
+    async def stop(self):
+        if not self.enabled:
+            return
+        self._closing = True
+        await self.flush()
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+
+store = RoomStore()

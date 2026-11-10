@@ -20,6 +20,7 @@ from draw_party import GAME_IDS as DRAW_IDS, EVENTS as DRAW_EVENTS, start as dra
 from party_modes import GAME_IDS as PARTY_IDS, EVENTS as PARTY_EVENTS, start_party, party_snapshot, handle_party_event
 from master_admin import MasterAdmin
 from episode_game import GAME_IDS as EPISODE_IDS, EVENTS as EPISODE_EVENTS, start as episode_start, snapshot as episode_snapshot, handle as episode_handle
+from room_store import store as ROOM_STORE, GAME_TTL
 from echa_backend import register as register_echa
 from milli_backend import MilliService
 from party_more import GAME_IDS as MORE_IDS, EVENTS as MORE_EVENTS, start as more_start, snapshot as more_snapshot, handle as more_handle
@@ -208,6 +209,7 @@ async def send_json(ws, obj):
 async def broadcast(room):
     """Build each private snapshot before awaiting; send to peers concurrently."""
     room["lastUsed"] = time.time()
+    ROOM_STORE.mark("game", room)
     recipients = []
     published = MASTER.public_games()
     for pid, player in list(room["players"].items()):
@@ -609,6 +611,7 @@ async def handle_event(ws, context, obj):
             await broadcast(room)
         else:
             ROOMS.pop(room["code"], None)
+            ROOM_STORE.delete("game", room["code"])
         await ws.close(code=1000, message=b"left room")
         return
     elif t == "restart":
@@ -677,7 +680,9 @@ async def health(request):
         "revision": os.environ.get("RENDER_GIT_COMMIT", "unknown")[:12],
         "uptimeSeconds": int(time.time() - START_TIME),
         "rooms": len(ROOMS), "artRooms": len(ART_ROOMS),
-        "connectedPlayers": connected
+        "connectedPlayers": connected,
+        "roomPersistence": "postgres" if ROOM_STORE.enabled else "memory",
+        "pendingRoomWrites": len(ROOM_STORE._queue) if ROOM_STORE.enabled else 0,
     }, headers={"Cache-Control": "no-store"})
 
 
@@ -696,8 +701,14 @@ async def websocket(request):
                 if not isinstance(obj, dict):
                     raise ValueError("不正な通信です")
                 if obj.get("type") == "ping":
-                    # Reply directly without creating an admin activity entry.
-                    # Client keepalive also prevents unintended idle sleep.
+                    # Refresh in-memory TTL on quiet ongoing games and persist
+                    # the activity time only occasionally (not every heartbeat).
+                    active_room=ctx.get("room")
+                    if active_room:
+                        active_room["lastUsed"]=time.time()
+                        if time.time()-active_room.get("_heartbeatSavedAt",0)>600:
+                            active_room["_heartbeatSavedAt"]=time.time()
+                            ROOM_STORE.mark("game",active_room)
                     await ws.send_json({"type":"pong","at":time.time()})
                     continue
                 # Serialize game actions inside a room. Without this lock,
@@ -781,8 +792,10 @@ async def housekeep(app):
         await asyncio.sleep(300)
         now = time.time()
         for c, room in list(ROOMS.items()):
-            if now - room["lastUsed"] > 7200 and not any(p["ws"] and not p["ws"].closed for p in room["players"].values()):
+            timeout=GAME_TTL if ROOM_STORE.enabled else 7200
+            if now - room["lastUsed"] > timeout and not any(p["ws"] and not p["ws"].closed for p in room["players"].values()):
                 ROOMS.pop(c, None)
+                ROOM_STORE.delete("game", c)
 
 
 async def task_ctx(app):
@@ -892,7 +905,24 @@ register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
 app.on_shutdown.append(shutdown_game_sockets)
+async def persistent_rooms_ctx(app):
+    # Load saved state before accepting websocket requests or starting TTL
+    # cleanup. Never silently start with empty rooms if the configured
+    # database is unavailable: doing so would risk overwriting real saves.
+    await ROOM_STORE.start()
+    if ROOM_STORE.enabled:
+        saved_games, saved_art=await ROOM_STORE.load()
+        ROOMS.update(saved_games)
+        from echa_backend import ROOMS as ART_ROOMS
+        ART_ROOMS.update(saved_art)
+    try:
+        yield
+    finally:
+        await ROOM_STORE.stop()
+
+
 app.cleanup_ctx.append(task_ctx)
+app.cleanup_ctx.insert(0, persistent_rooms_ctx)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
