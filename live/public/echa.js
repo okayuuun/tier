@@ -9,7 +9,7 @@ let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
-let maxStrokes=3000;
+let maxStrokes=3000,drawProblem='';
 const paintScratch=new Map();
 const layerPaintCache=new Map();
 const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
@@ -202,8 +202,9 @@ function connectRoom(name,isRetry=false){
   clearInterval(pingTimer);pingTimer=null;
   if(activePointer?.mode==='draw'||pending.has(myId)){
    discardPendingStroke();
+   drawProblem='⚠️ 通信が切れたため未確定の線を取り消しました。接続回復後に描き直してください。';
    $('ec-draw-warning').hidden=false;
-   $('ec-draw-warning').textContent='⚠️ 通信が切れたため未確定の線を取り消しました。接続回復後に描き直してください。';
+   $('ec-draw-warning').textContent=drawProblem;
   }
   if(cloudSaveInFlight){
    cloudSaveInFlight=false;
@@ -265,8 +266,9 @@ function onMessage(d){
     if(d.action!=='begin')send({type:'cancel'});
     send({type:'sync'});
    }
+   drawProblem='⚠️ 描画を保存できませんでした：'+(d.message||'接続状況をご確認ください。');
    $('ec-draw-warning').hidden=false;
-   $('ec-draw-warning').textContent='⚠️ 描画を保存できませんでした：'+(d.message||'接続状況をご確認ください。');
+   $('ec-draw-warning').textContent=drawProblem;
   }
   alertUI(d.message);
   if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
@@ -328,7 +330,7 @@ function onMessage(d){
   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
-  maxLayers=d.maxLayers||8;maxStrokes=Number(d.maxStrokes)||3000;normalizeLayers(d.layers);
+  maxLayers=d.maxLayers||8;maxStrokes=Number(d.maxStrokes)||3000;drawProblem='';normalizeLayers(d.layers);
   try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
@@ -344,6 +346,7 @@ function onMessage(d){
  if(d.type==='cancel'){pending.delete(d.by);schedulePending();return}
  if(d.type==='end'){
   strokes.push(d.stroke);pending.delete(d.stroke.by);
+  if(d.stroke.by===myId)drawProblem='';
   redraw();schedulePending();updateCount();return
  }
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
@@ -484,6 +487,7 @@ function updateCount(){
  $('ec-strokes').textContent=count+' / '+maxStrokes+'本';
  const note=$('ec-draw-warning');
  if(!note)return;
+ if(drawProblem){note.hidden=false;note.textContent=drawProblem;return}
  if(count<maxStrokes*0.9){note.hidden=true;note.textContent='';return}
  note.hidden=false;
  note.textContent=count>=maxStrokes
