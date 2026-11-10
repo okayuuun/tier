@@ -6,7 +6,7 @@ Do not use real production credentials or expose connection URLs in logs.
 import asyncio
 import os
 import time
-from room_store import RoomStore, serialize_room, deserialize_room
+from room_store import RoomStore, serialize_room, deserialize_room, normalize_postgres_dsn
 
 
 class Socket:
@@ -55,6 +55,18 @@ def art_room():
 
 
 async def main():
+    # Neon Console's normal URL has channel_binding=require. asyncpg does not
+    # recognize that parameter, but should retain SSL and password faithfully.
+    neon_url = ('postgresql://app:p%40ssword@ep-example-pooler.aws.neon.tech/'
+                'neondb?sslmode=require&channel_binding=require')
+    normalized = normalize_postgres_dsn(neon_url)
+    assert 'sslmode=require' in normalized
+    assert 'channel_binding' not in normalized
+    assert 'p%40ssword@' in normalized
+    assert normalize_postgres_dsn(normalized) == normalized
+    assert normalize_postgres_dsn('postgresql://user:pass@localhost/db') == (
+        'postgresql://user:pass@localhost/db')
+    assert RoomStore(neon_url).dsn == normalized
     dsn=os.environ['TEST_ROOM_DATABASE_URL']
     store=RoomStore(dsn,delay=.05)
     await store.start()
