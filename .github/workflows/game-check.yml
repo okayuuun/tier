@@ -21,6 +21,10 @@ jobs:
           for f in live/public/*.js; do node --check "$f"; done
       - name: Test five additional original board/card game modes
         run: python live/test_board_plus.py
+      - name: Test newly added games through four live WebSocket connections
+        run: python live/test_board_plus_socket.py
+      - name: Test all five new smartphone game screens
+        run: node live/test_board_plus_ui.js
       - name: Test five popular board-game-inspired online modes
         run: python live/test_board_games.py
       - name: Test new board games on four real WebSocket clients
