@@ -260,7 +260,11 @@ function onMessage(d){
    // The server rejected the stroke. Remove the local-only preview so
    // the next line never appears to erase the previous line.
    discardPendingStroke();
-   if(connected())send({type:'sync'});
+   if(connected()){
+    // A rejected points/end may leave an unfinished server draft.
+    if(d.action!=='begin')send({type:'cancel'});
+    send({type:'sync'});
+   }
    $('ec-draw-warning').hidden=false;
    $('ec-draw-warning').textContent='⚠️ 描画を保存できませんでした：'+(d.message||'接続状況をご確認ください。');
   }
@@ -513,6 +517,7 @@ workspace.addEventListener('wheel',ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1
 /* On mobile, two touch pointers pan/zoom the whole board. A pinch discards
    the current brush stroke so there are no unwanted marks on the canvas. */
 const touchPoints=new Map();
+const twoFingerUndoToggle=$('ec-two-finger-undo');
 let pinch=null,pinchUsed=false;
 let firstTouchAt=0,twoFingerTap=false,touchMoved=false,hadTwoFingers=false;
 function pinchInfo(){
@@ -571,7 +576,9 @@ function liftTouch(ev){
  touchPoints.delete(ev.pointerId);
  if(touchPoints.size<2)pinch=null;
  if(touchPoints.size===0){
-  const undoTap=hadTwoFingers&&twoFingerTap&&!touchMoved&&
+  // Gesture undo is opt-in: incidental extra fingertips/palm contact
+  // must not silently delete a finished stroke while someone is drawing.
+  const undoTap=twoFingerUndoToggle?.checked&&hadTwoFingers&&twoFingerTap&&!touchMoved&&
                 Date.now()-firstTouchAt<=430;
   pinchUsed=false;twoFingerTap=false;hadTwoFingers=false;
   if(undoTap&&connected()){
