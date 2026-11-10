@@ -67,4 +67,42 @@ vm.runInContext("forgetRecentRoom('ABC234')",c2);
 assert.equal(API.list().length,0);
 assert(html.includes('/recent_rooms.js?v=1'));
 assert(html.includes('main.js?v=29'));
-console.log('PASS recent rooms, expiry, opt-in resume, normal joins, privacy removal and blocked storage');
+
+// When a user resumes in another tab, the displaced tab must stop retrying.
+const artSource=fs.readFileSync(__dirname+'/public/echa.js','utf8');
+const gameStart=main.indexOf('socket.onclose=ev=>{');
+const gameEnd=main.indexOf('socket.onerror=()=>',gameStart);
+assert(gameStart>=0&&gameEnd>gameStart);
+let gameRetries=0,gameMessage='';
+const gameWs={};
+const gameCtx={ws:gameWs,room:{code:'ABC234'},connectCode:'ABC234',
+ pendingAction:'join',replacedByAnotherTab:false,retryAttempt:0,
+ retryTimer:null,pingTimer:null,connecting:false,
+ clearHandshake(){},clearInterval(){},clearTimeout(){},
+ sessionStorage:{setItem(){}},Date,Math,JSON,
+ status(t){gameMessage=t},error(){},setTimeout(){gameRetries++}};
+vm.createContext(gameCtx);
+vm.runInContext('const socket=ws;\n'+main.slice(gameStart,gameEnd),gameCtx);
+gameWs.onclose({code:1000,reason:'replaced by reconnection'});
+assert.equal(gameRetries,0);
+assert.equal(gameCtx.replacedByAnotherTab,true);
+assert.match(gameMessage,/別のタブ/);
+const artStart=artSource.indexOf('socket.onclose=ev=>{');
+const artEnd=artSource.indexOf('socket.onerror=()=>',artStart);
+assert(artStart>=0&&artEnd>artStart);
+let artRetries=0,artMessage='';
+const artWs={};
+const artCtx={ws:artWs,pingTimer:null,handshakeTimer:null,
+ handedOffToOtherTab:false,retryWanted:true,Date,
+ clearTimeout(){},clearInterval(){},stopNetworkTimers(){},
+ sessionStorage:{setItem(){}},scheduleReconnect(){artRetries++},
+ networkHelp(){},alertUI(t){artMessage=t}};
+vm.createContext(artCtx);
+vm.runInContext('const socket=ws;\n'+artSource.slice(artStart,artEnd),artCtx);
+artWs.onclose({code:1000,reason:'replaced'});
+assert.equal(artRetries,0);
+assert.equal(artCtx.handedOffToOtherTab,true);
+assert.equal(artCtx.retryWanted,false);
+assert.match(artMessage,/別のタブ/);
+assert(artSource.includes('!ev.persisted||!code||handedOffToOtherTab'));
+console.log('PASS recent sessions, privacy and no competing-tab reconnection loops');

@@ -5,6 +5,7 @@ const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
 let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,retryWanted=true,lastConnected=false,activeName='';
+let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
@@ -73,6 +74,8 @@ function networkHelp(state){
   ?'📶 インターネットに接続されていません。Wi-Fi／モバイル通信を確認してください。描画の送信は再接続後に行ってください。'
   :state==='lost'
   ?'⚠️ この部屋は保存期限切れか削除済みの可能性があります。画面に絵が残っていれば、先にPNG保存してください。'
+  :state==='other-tab'
+  ?'🔁 別のタブがこの描き手として接続しました。こちらで再開する場合だけ「↻ 再接続」を押してください。'
   :reconnectAttempt>=3
   ?'⚠️ 接続に時間がかかっています。通信状態を確認し、「↻ 再接続」を押してください。画面に絵が残っている場合はPNG保存もできます。'
   :'🔄 サーバーへの接続を回復しています。画面を閉じずにお待ちください。復帰までは新しい線を送信できません。';
@@ -146,7 +149,7 @@ function scheduleReconnect(){
 }
 function connectRoom(name,isRetry=false){
  activeName=name;
- if(!isRetry){reconnectAttempt=0;retryWanted=true}
+ if(!isRetry){reconnectAttempt=0;retryWanted=true;handedOffToOtherTab=false}
  stopNetworkTimers();
  try{localStorage.setItem('nk_echa_name',name)}catch(_){}
  if(ws){
@@ -187,6 +190,13 @@ function connectRoom(name,isRetry=false){
   clearInterval(pingTimer);pingTimer=null;
   try{sessionStorage.setItem('nk_echa_last_disconnect',
    new Date().toLocaleString('ja-JP')+' / code '+ev.code)}catch(_){}
+  if(ev.code===1000&&ev.reason==='replaced'){
+   handedOffToOtherTab=true;
+   retryWanted=false;stopNetworkTimers();
+   alertUI('別のタブでこの描き手が接続しました');
+   networkHelp('other-tab');
+   return;
+  }
   scheduleReconnect()
  };
  socket.onerror=()=>{
@@ -196,12 +206,12 @@ function connectRoom(name,isRetry=false){
 window.addEventListener('pagehide',()=>{retryWanted=false;stopNetworkTimers()});
 window.addEventListener('pageshow',ev=>{
  // Safari may restore a tab without reloading its JavaScript.
- if(!ev.persisted||!code)return;
+ if(!ev.persisted||!code||handedOffToOtherTab)return;
  retryWanted=true;
  connectRoom(activeName||storedName()||'ゲスト',true)
 });
 document.addEventListener('visibilitychange',()=>{
- if(document.visibilityState!=='visible'||!code||!retryWanted)return;
+ if(document.visibilityState!=='visible'||!code||!retryWanted||handedOffToOtherTab)return;
  if(!ws||ws.readyState===WebSocket.CLOSED||
     (ws.readyState===WebSocket.OPEN&&Date.now()-lastPongAt>90000)){
   connectRoom(activeName||storedName()||'ゲスト',true)
@@ -210,7 +220,7 @@ document.addEventListener('visibilitychange',()=>{
 window.addEventListener('offline',()=>{if(code)networkHelp('offline')});
 window.addEventListener('online',()=>{
  if(ws&&ws.readyState===WebSocket.OPEN)return;
- if(retryWanted&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
+ if(retryWanted&&!handedOffToOtherTab&&code){stopNetworkTimers();connectRoom(activeName||storedName()||'ゲスト',true)}
 });
 function onMessage(d){
  if(d.type==='error'){
