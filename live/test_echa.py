@@ -36,15 +36,17 @@ async def main():
         assert 'ownerKey' not in json.dumps(second)
         await take_type(two,'members')
         await take_type(one,'members')
-        stroke={'type':'begin','color':'#12abEF','width':7,'opacity':0.8,'tool':'pen','point':[.1,.2]}
+        stroke={'type':'begin','color':'#12abEF','width':7,'opacity':0.8,'tool':'pen','point':[.1,.2],'clientSerial':123}
         await one.send_json(stroke)
         begin=await take_type(two,'begin')
         assert begin['stroke']['color']=='#12abef'
+        assert begin['stroke']['clientSerial']==123
         await one.send_json({'type':'points','points':[[.2,.3],[.3,.4]]})
         points=await take_type(two,'points')
         assert len(points['points'])==2
         await one.send_json({'type':'end'})
         ending=await take_type(one,'end')
+        assert ending['stroke']['clientSerial']==123
         await take_type(two,'end')
         assert len(ROOMS[code]['strokes'])==1
         await two.send_json({'type':'sync'})

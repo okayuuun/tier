@@ -93,6 +93,8 @@ jobs:
         run: python live/test_echa_stroke_limits.py
       - name: Test lightweight art preview and eraser fallback
         run: node live/test_echa_live_preview.js
+      - name: Test rapid consecutive art strokes and delayed ACKs
+        run: node live/test_echa_fast_strokes.js
       - name: Test art cloud-saving only after completed edits
         run: python live/test_echa_save_throttle.py
       - name: Test art-chat refused stroke rollback

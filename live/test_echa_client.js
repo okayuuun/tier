@@ -29,7 +29,7 @@ const main=fakeCanvas(3072,2048),timeline=fakeCanvas(960,640);
 const ctx={console,WIDTH:3072,HEIGHT:2048,document:{createElement(){return fakeCanvas()}},
   layers:[{id:'base',visible:true,opacity:1},{id:'layer_2',visible:true,opacity:.55}],
   strokes:[pen('base'),pen('layer_2'),pen('layer_2','eraser')],
-  pending:new Map(),paintScratch:new Map(),layerPaintCache:new Map()};
+  pending:new Map(),waitingLocal:new Map(),paintScratch:new Map(),layerPaintCache:new Map()};
 vm.createContext(ctx);
 vm.runInContext(renderSource,ctx);
 vm.runInContext('composite',ctx)(main.ctx,3,false);

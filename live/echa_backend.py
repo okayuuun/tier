@@ -303,8 +303,13 @@ async def route_ws(request):
                     layer=next((x for x in room['layers'] if x['id']==layer_id),None)
                     if not layer or not layer['visible']:
                         raise ValueError('表示中のレイヤーを選択してください')
+                    # Echo a per-client stroke sequence on completion so a
+                    # late acknowledgement cannot clear the NEXT live stroke.
+                    seq=data.get('clientSerial')
+                    if type(seq) is not int or not 1<=seq<=2_147_483_647:
+                        seq=None
                     room['drawing'][player_id]={'id':secrets.token_urlsafe(9),
-                        'layer':layer_id,
+                        'layer':layer_id, 'clientSerial':seq,
                         'by':player_id,'name':name,'points':[point],'ts':time.time(),**props}
                     await notify(room,{'type':'begin','stroke':room['drawing'][player_id]},exclude=ws)
                 elif action=='points':
@@ -322,8 +327,10 @@ async def route_ws(request):
                     await notify(room,{'type':'points','by':player_id,'points':cleaned},exclude=ws)
                 elif action=='cancel':
                     # A second touch means pinch/zoom, not an unfinished brush mark.
-                    if room['drawing'].pop(player_id,None) is not None:
-                        await notify(room,{'type':'cancel','by':player_id})
+                    cancelled=room['drawing'].pop(player_id,None)
+                    if cancelled is not None:
+                        await notify(room,{'type':'cancel','by':player_id,
+                                           'clientSerial':cancelled.get('clientSerial')})
                 elif action=='end':
                     stroke=room['drawing'].pop(player_id,None)
                     if stroke:

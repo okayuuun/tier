@@ -5,6 +5,7 @@ Do not use real production credentials or expose connection URLs in logs.
 """
 import asyncio
 import os
+import zlib
 import time
 from room_store import (RoomStore, serialize_room, deserialize_room,
                         normalize_postgres_dsn, retention_hours, GAME_TTL, ART_TTL)
@@ -121,7 +122,10 @@ async def main():
     assert len(arts['ART777']['strokes'])==2
     assert arts['ART777']['drawing']=={}
     assert arts['ART777']['version']==3
-    assert 'ws' not in serialize_room('game',games['DUR777']).decode('latin-1','ignore')
+    # Check the actual JSON, not random compressed bytes (which may
+    # coincidentally contain the letters "ws" and fail nondeterministically).
+    encoded=serialize_room('game',games['DUR777'])
+    assert b'"ws"' not in zlib.decompress(encoded)
     assert deserialize_room('game',serialize_room('game',games['DUR777']))['players']['owner-id']['ws'] is None
 
     games['DUR777']['phase']='final'
