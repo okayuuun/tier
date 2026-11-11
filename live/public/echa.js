@@ -513,8 +513,9 @@ function paintPending(){
  for(const s of drafts){
   if((s.layer||'base')!==layer.id)continue;
   octx.save();
-  octx.globalAlpha=layer.opacity;
-  stroke(octx,s);
+  // stroke() assigns globalAlpha itself, so bake the layer opacity into
+  // this preview-only copy rather than mutating the real stroke.
+  stroke(octx,{...s,opacity:(Number(s.opacity)||1)*layer.opacity});
   octx.restore();
  }
  octx.restore()
