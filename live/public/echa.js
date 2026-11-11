@@ -347,7 +347,7 @@ function onMessage(d){
  if(d.type==='end'){
   strokes.push(d.stroke);pending.delete(d.stroke.by);
   if(d.stroke.by===myId)drawProblem='';
-  redraw();schedulePending();updateCount();return
+  redraw();return
  }
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
  if(d.type==='clear'){strokes=[];pending.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
@@ -481,7 +481,51 @@ function composite(target,count=strokes.length,live=false){
  }
  target.restore()
 }
-function redraw(){composite(ctx,strokes.length,true);updateCount()}
+/* Paint in-progress pen strokes onto the already-present transparent input
+   canvas. The expensive full-size layer composite only runs when an operation
+   commits, not on every pointer movement. Erasers or multiple visible layers
+   retain accurate layer-by-layer compositing while drawing. */
+let previewOnMain=false;
+function paintPending(){
+ const drafts=[...pending.values()];
+ const visible=layers.filter(layer=>layer.visible&&layer.opacity>0);
+ const needsLayerComposite=drafts.length>0 &&
+   (visible.length!==1||drafts.some(s=>s.tool==='eraser'));
+ octx.save();
+ octx.setTransform(1,0,0,1,0,0);
+ octx.clearRect(0,0,overlay.width,overlay.height);
+ octx.restore();
+ if(needsLayerComposite){
+  composite(ctx,strokes.length,true);
+  previewOnMain=true;
+  return;
+ }
+ if(previewOnMain){
+  // The last eraser/pending multi-layer stroke was cancelled or completed.
+  // Restore the committed picture before clearing the temporary preview.
+  composite(ctx,strokes.length,false);
+  previewOnMain=false;
+ }
+ if(!drafts.length)return;
+ octx.save();
+ octx.setTransform(1,0,0,1,0,0);
+ const layer=visible[0];
+ for(const s of drafts){
+  if((s.layer||'base')!==layer.id)continue;
+  octx.save();
+  // stroke() assigns globalAlpha itself, so bake the layer opacity into
+  // this preview-only copy rather than mutating the real stroke.
+  stroke(octx,{...s,opacity:(Number(s.opacity)||1)*layer.opacity});
+  octx.restore();
+ }
+ octx.restore()
+}
+function redraw(){
+ composite(ctx,strokes.length,false);
+ previewOnMain=false;
+ paintPending();
+ updateCount()
+}
 function updateCount(){
  const count=strokes.length;
  // There is no fixed stroke count quota. Keep this a plain count, not x / limit.
@@ -491,9 +535,20 @@ function updateCount(){
  note.hidden=!drawProblem;
  note.textContent=drawProblem||'';
 }
+let lastDraftFrame=0;
 function schedulePending(){
- if(drawingScheduled)return;drawingScheduled=true;
- requestAnimationFrame(()=>{drawingScheduled=false;redraw()})
+ if(drawingScheduled)return;
+ drawingScheduled=true;
+ requestAnimationFrame(function frame(now){
+  // 30fps is ample for pen previews while reducing large-canvas work.
+  if(Number.isFinite(now)&&lastDraftFrame&&now-lastDraftFrame<32){
+   requestAnimationFrame(frame);
+   return;
+  }
+  lastDraftFrame=Number.isFinite(now)?now:0;
+  drawingScheduled=false;
+  paintPending()
+ })
 }
 function transform(){board.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.zoom+')';$('ec-zoom-label').textContent=Math.round(view.zoom*100)+'%'}
 function fit(){

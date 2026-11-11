@@ -163,6 +163,10 @@ class RoomStore:
         self._saved_versions = {}
         self._invalid_versions = {}
         self._saved_times = {}
+        # Art can receive hundreds of completed brush marks per minute. Keep
+        # full-room compression off the hot path by spacing art snapshots.
+        # This only affects automatic saves, not the WebSocket paint events.
+        self._last_art_write = {}
         self._closing = False
         self._last_warning = 0.0
         self._last_error = 0.0
@@ -296,13 +300,24 @@ class RoomStore:
         try:
             await asyncio.sleep(self.delay)
             while key in self._queue:
+                if key[0] == "art":
+                    # Absorb bursts of edits into one snapshot instead of
+                    # repeatedly serializing every stroke on the event loop.
+                    # Capture the newest queued version AFTER the short pause.
+                    since = time.monotonic() - self._last_art_write.get(key, 0)
+                    if since < 1.5:
+                        await asyncio.sleep(1.5 - since)
                 version, room = self._queue.pop(key)
                 try:
                     await self._write_one(key, version, room)
+                    if key[0] == "art":
+                        self._last_art_write[key] = time.monotonic()
                     saved_at = time.time()
                     self._saved_versions[key] = max(
                         version, self._saved_versions.get(key, -1))
                     self._saved_times[key] = saved_at
+                    if key[0] == "art" and room is None:
+                        self._last_art_write.pop(key, None)
                     self._last_success = saved_at
                     attempts = 0
                 except (TypeError, ValueError):

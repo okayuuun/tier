@@ -137,7 +137,12 @@ def public_members(room):
 
 async def notify(room, payload, exclude=None):
     """Preserve event order while sending to peers concurrently and with bounds."""
-    ROOM_STORE.mark("art", room)
+    # Brush points arrive many times per second. Scheduling a compressed
+    # full-room PostgreSQL snapshot for every point blocks large canvases.
+    # Persist completed changes instead; the in-progress stroke remains live
+    # via WebSocket and an explicit cloud-save still captures the full room.
+    if payload.get('type') not in ('begin', 'points', 'cancel'):
+        ROOM_STORE.mark("art", room)
     wire=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
     async with room.setdefault('notifyLock', asyncio.Lock()):
         sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
