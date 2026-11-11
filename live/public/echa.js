@@ -8,6 +8,8 @@ let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,la
 let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
+let localStrokeSerial=0;
+const waitingLocal=new Map(); // Sent marks awaiting acknowledgement.
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 let drawProblem='';
 const paintScratch=new Map();
@@ -327,6 +329,7 @@ function onMessage(d){
    }
    try{current.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
+  waitingLocal.clear();
   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
@@ -343,22 +346,35 @@ function onMessage(d){
  if(d.type==='chat'){messages.push(d.item);messages=messages.slice(-65);renderChat();return}
  if(d.type==='begin'){pending.set(d.stroke.by,d.stroke);schedulePending();return}
  if(d.type==='points'){const s=pending.get(d.by);if(s){s.points.push(...d.points);schedulePending()}return}
- if(d.type==='cancel'){pending.delete(d.by);schedulePending();return}
+ if(d.type==='cancel'){
+  const draft=pending.get(d.by);
+  if(d.by!==myId||!draft||d.clientSerial==null||
+     draft.clientSerial===d.clientSerial)pending.delete(d.by);
+  if(d.by===myId&&d.clientSerial!=null)waitingLocal.delete(d.clientSerial);
+  schedulePending();return
+ }
  if(d.type==='end'){
-  strokes.push(d.stroke);pending.delete(d.stroke.by);
-  if(d.stroke.by===myId)drawProblem='';
+  strokes.push(d.stroke);
+  if(d.stroke.by===myId){
+   const serial=d.stroke.clientSerial;
+   if(serial!=null)waitingLocal.delete(serial);
+   // The old line's ACK cannot clear a newer local line.
+   const active=pending.get(myId);
+   if(!active||serial==null||active.clientSerial===serial)pending.delete(myId);
+   drawProblem=''
+  }else pending.delete(d.stroke.by);
   redraw();return
  }
  if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
- if(d.type==='clear'){strokes=[];pending.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
+ if(d.type==='clear'){strokes=[];pending.clear();waitingLocal.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
  if(d.type==='layers'){
    resetPaintCache(); // Rebuild fill boundaries after shared layer order/visibility changes.
   if(d.selected&&selectNewLayer)selectedLayer=d.selected;
   selectNewLayer=false;
-  if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]));resetPaintCache()}
+  if(d.strokes){strokes=d.strokes;pending=new Map((d.drawing||[]).map(x=>[x.by,x]));waitingLocal.clear();resetPaintCache()}
   normalizeLayers(d.layers);redraw();return
  }
- if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));resetPaintCache();normalizeLayers(d.layers);redraw();schedulePending();updateCount()}
+ if(d.type==='sync'){strokes=d.strokes||[];pending=new Map((d.drawing||[]).map(x=>[x.by,x]));waitingLocal.clear();resetPaintCache();normalizeLayers(d.layers);redraw();schedulePending();updateCount()}
 }
 function renderMembers(){
  $('ec-members-count').textContent='・'+members.length+'人参加';
@@ -461,7 +477,7 @@ function renderedLayers(w,h,count){
 }
 function composite(target,count=strokes.length,live=false){
  const w=target.canvas.width,h=target.canvas.height;
- const completed=renderedLayers(w,h,count),drafts=live?[...pending.values()]:[];
+ const completed=renderedLayers(w,h,count),drafts=live?[...waitingLocal.values(),...pending.values()]:[];
  target.save();target.setTransform(1,0,0,1,0,0);
  target.globalAlpha=1;target.globalCompositeOperation='source-over';
  target.clearRect(0,0,w,h);target.fillStyle='#fff';target.fillRect(0,0,w,h);
@@ -487,7 +503,7 @@ function composite(target,count=strokes.length,live=false){
    retain accurate layer-by-layer compositing while drawing. */
 let previewOnMain=false;
 function paintPending(){
- const drafts=[...pending.values()];
+ const drafts=[...waitingLocal.values(),...pending.values()];
  const visible=layers.filter(layer=>layer.visible&&layer.opacity>0);
  const needsLayerComposite=drafts.length>0 &&
    (visible.length!==1||drafts.some(s=>s.tool==='eraser'));
@@ -672,6 +688,7 @@ function discardPendingStroke(){
  if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
  sendQueue.length=0;
  pending.delete(myId);
+ waitingLocal.clear();
  if(activePointer?.mode==='draw'){
   try{overlay.releasePointerCapture(activePointer.id)}catch(_){}
   activePointer=null
@@ -706,9 +723,9 @@ overlay.addEventListener('pointerdown',ev=>{
  if(panning)return;
  const layer=layers.find(x=>x.id===selectedLayer);
  if(!layer||!layer.visible){alertUI('描画するには表示中のレイヤーを選んでください');activePointer=null;return}
- const s={by:myId,layer:selectedLayer,color:currentColor(),width:currentWidth(),opacity:currentOpacity(),tool:tool==='eraser'?'eraser':'pen',points:[pt]};
+ const s={by:myId,clientSerial:++localStrokeSerial,layer:selectedLayer,color:currentColor(),width:currentWidth(),opacity:currentOpacity(),tool:tool==='eraser'?'eraser':'pen',points:[pt]};
  pending.set(myId,s);schedulePending();
- if(!send({type:'begin',point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})){
+ if(!send({type:'begin',clientSerial:s.clientSerial,point:pt,color:s.color,width:s.width,opacity:s.opacity,tool:s.tool,layer:selectedLayer})){
   discardPendingStroke();alertUI('未接続のため描画を保存できません。↻ 再接続をお試しください。')
  }
 });
@@ -736,6 +753,13 @@ function finishStroke(ev){
    if(!send({type:'end'})){
     discardPendingStroke();
     alertUI('通信が切れたため線を保存できませんでした。再接続してから描いてください。')
+   }else{
+    // Keep the preview until this exact stroke is acknowledged.
+    const draft=pending.get(myId);
+    if(draft?.clientSerial!=null){
+     waitingLocal.set(draft.clientSerial,draft);
+     pending.delete(myId);
+    }
    }
   }
  }
