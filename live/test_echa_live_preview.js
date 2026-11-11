@@ -16,7 +16,7 @@ const composite=(target,count,live)=>full.push({target,count,live});
 const stats={textContent:''},warn={hidden:true,textContent:''};
 const state={
  octx,ctx:{},overlay,stroke,composite,
- strokes:[{id:'prior'}],drawProblem:'',
+ strokes:[{id:'prior'}],drawProblem:'',drawingScheduled:false,
  layers:[{id:'base',visible:true,opacity:0.5}],
  pending:new Map([['alice',{by:'alice',layer:'base',tool:'pen',opacity:.8,points:[[.1,.1]]}]]),
  requestAnimationFrame:fn=>queued.push(fn),
