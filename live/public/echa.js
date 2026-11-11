@@ -202,6 +202,8 @@ function connectRoom(name,isRetry=false){
   if(ws!==socket)return;
   clearTimeout(handshakeTimer);handshakeTimer=null;
   clearInterval(pingTimer);pingTimer=null;
+  // A disconnected socket cannot deliver its outstanding ACKs.
+  if(waitingLocal.size){waitingLocal.clear();schedulePending()}
   if(activePointer?.mode==='draw'||pending.has(myId)){
    discardPendingStroke();
    drawProblem='⚠️ 通信が切れたため未確定の線を取り消しました。接続回復後に描き直してください。';
@@ -688,7 +690,6 @@ function discardPendingStroke(){
  if(moveTimer){clearTimeout(moveTimer);moveTimer=null}
  sendQueue.length=0;
  pending.delete(myId);
- waitingLocal.clear();
  if(activePointer?.mode==='draw'){
   try{overlay.releasePointerCapture(activePointer.id)}catch(_){}
   activePointer=null
