@@ -275,12 +275,14 @@ function onMessage(d){
    $('ec-draw-warning').textContent=drawProblem;
   }
   alertUI(d.message);
-  if(/部屋が見つかりません|再起動で消えた|参加履歴がいっぱい/.test(d.message)){
+  // An identity-history limit is NOT an expired room. Only mark a
+  // room lost when the server explicitly reports a missing room.
+  if(/部屋が見つかりません|再起動で消えた/.test(d.message)){
    // A free Render service may restart and discard an in-memory room.
    // Stop futile retries; old local artwork can still be saved as PNG.
    retryWanted=false;stopNetworkTimers();networkHelp('lost');
    if(ws){ws.onclose=null;try{ws.close()}catch(_){}}
-   const text='前の絵チャの部屋がなくなりました。サーバー再起動などで消えた可能性があります。新しい部屋を作成してください。';
+   const text='前の絵チャの部屋を復元できませんでした。'+d.message+' 作品の保存状態を確認してから、新しい部屋を作成してください。';
    $('ec-join-error').textContent=text;
    if(lastConnected){
     $('ec-recovery').hidden=false;
