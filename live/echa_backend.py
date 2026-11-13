@@ -19,6 +19,7 @@ CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 WIDTH, HEIGHT = 3072, 2048
 MAX_ROOMS = 36
 MAX_USERS = 12
+MAX_IDENTITIES = 60  # Stored reconnect credentials, not a lifetime guest limit.
 MAX_LAYERS = 8
 MAX_POINTS = 320
 MAX_MESSAGES = 65
@@ -98,6 +99,37 @@ def change_layer(room, member, data):
     else:
         raise ValueError('レイヤー操作が不正です')
     return {}
+
+
+def admit_new_identity(room):
+    """Make room for a new visitor without losing the shared artwork.
+
+    Historical reconnect credentials are not the live member count. The old
+    code refused any new guest forever after 60 different browser sessions.
+    Retire the oldest disconnected guest token instead, keeping the room,
+    completed strokes, active participants and (where possible) owner tokens.
+    A retired guest may return with a new identity but cannot undo their
+    old strokes, which is safer than deleting their drawing.
+    """
+    if len(room['identities']) < MAX_IDENTITIES:
+        return
+    active_ids = {m['id'] for m in room['members'].values()}
+    # Dict insertion order tracks join order, even through JSON snapshots.
+    candidates = [
+        (token, identity) for token, identity in room['identities'].items()
+        if identity['id'] not in active_ids
+    ]
+    # Prefer inactive guests; keep creator's reconnect privileges when possible.
+    chosen = next(((token, ident) for token, ident in candidates
+                   if not ident.get('owner')), None)
+    if chosen is None:
+        chosen = next(iter(candidates), None)
+    if chosen is None:
+        # Should not happen with 12 active people and 60 saved credentials.
+        raise ValueError('参加者の入れ替え中です。少しして再度お試しください')
+    token, identity = chosen
+    room['identities'].pop(token, None)
+    room.setdefault('fillLast', {}).pop(identity['id'], None)
 
 
 def clean_old():
@@ -271,8 +303,10 @@ async def route_ws(request):
                     else:
                         if len(room['members'])>=MAX_USERS:
                             raise ValueError('部屋は12人までです')
-                        if len(room['identities'])>=60:
-                            raise ValueError('参加履歴がいっぱいです。新しい部屋を作成してください')
+                        # The 60-entry history is a rolling cache, not a ban.
+                        # Keep old strokes even when an expired reconnect token
+                        # must be retired to admit a new participant.
+                        admit_new_identity(room)
                         player_id=secrets.token_urlsafe(9)
                         identity={'id':player_id,'name':name,
                                   'color':'#'+secrets.token_hex(3),'owner':has_owner_key}
