@@ -51,9 +51,11 @@ def retention_hours(name, default, maximum):
     return hours
 
 
-# Defaults: game rooms 3 days; art-chat 7 days. Configurable via Render.
+# Defaults: game rooms 3 days; art-chat 30 days. Configurable via Render.
+# Longer art retention protects collaboratively drawn pictures from surprise
+# expiry during a week away. Still bounded to protect free database quotas.
 GAME_RETENTION_HOURS = retention_hours("GAME_ROOM_RETENTION_HOURS", 72, 336)
-ART_RETENTION_HOURS = retention_hours("ECHA_ROOM_RETENTION_HOURS", 168, 720)
+ART_RETENTION_HOURS = retention_hours("ECHA_ROOM_RETENTION_HOURS", 720, 720)
 GAME_TTL = GAME_RETENTION_HOURS * 3600
 ART_TTL = ART_RETENTION_HOURS * 3600
 # Keep the existing strict cap for ordinary game rooms.
@@ -243,6 +245,40 @@ class RoomStore:
             room["_restoredAt"] = restored_at
         LOG.info("Recovered %d game rooms and %d art rooms", len(games), len(art))
         return games, art
+
+    async def load_art_by_code(self, code):
+        """Recover a single recent art room omitted from the startup list.
+
+        Startup only loads a bounded number of rooms; an older but still valid
+        drawing may be outside that batch. Never return expired or corrupted
+        data, and never expose owner keys or resume credentials to callers.
+        This method must be called under the art-room restoration lock.
+        """
+        if not self.enabled or self.pool is None:
+            return None
+        async with self.pool.acquire() as conn:
+            item = await conn.fetchrow("""
+                SELECT version, data, updated_at
+                FROM nakami_live_room_snapshots
+                WHERE kind='art' AND code=$1
+            """, code)
+        if item is None or item["updated_at"] < time.time() - ART_TTL:
+            return None
+        try:
+            room = deserialize_room("art", bytes(item["data"]))
+        except (TypeError, ValueError, KeyError, OverflowError):
+            LOG.exception("Saved art room could not be restored")
+            return None
+        if room.get("code") != code:
+            return None
+        key = ("art", code)
+        self._versions[key] = max(self._versions.get(key, 0), item["version"])
+        self._saved_versions[key] = max(
+            self._saved_versions.get(key, -1), item["version"])
+        self._saved_times[key] = item["updated_at"]
+        room["_restoredAt"] = time.time()
+        LOG.info("Recovered individual art room omitted from startup list")
+        return room
 
     async def save_and_confirm(self, kind, room, *, timeout=9.0):
         """Save one room and return its committed timestamp, or None.
