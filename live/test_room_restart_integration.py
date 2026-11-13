@@ -100,6 +100,10 @@ async def main():
         assert art_code in echa_backend.ROOMS
         assert all(p['ws'] is None for p in server.ROOMS[code]['players'].values())
         assert len(echa_backend.ROOMS[art_code]['strokes']) == 1
+        # Simulate a saved art room omitted from startup's limited list.
+        # Joining by room code must restore its Neon snapshot on demand.
+        echa_backend.ROOMS.pop(art_code)
+        assert art_code not in echa_backend.ROOMS
 
         restored_host = await client.ws_connect('/ws')
         await restored_host.send_json({'type':'join','name':'Host','code':code,'sid':sid1})
@@ -119,6 +123,7 @@ async def main():
                                         'name':'Drawer','ownerKey':key,
                                         'resumeToken':token})
         paint_state = await art_event(restored_paint,'snapshot')
+        assert art_code in echa_backend.ROOMS, 'Art room should lazily restore by code'
         assert paint_state['me'] == paint_pid
         assert isinstance(paint_state['restoredAt'], (float, int))
         assert paint_state['retentionHours']==room_store.ART_RETENTION_HOURS
