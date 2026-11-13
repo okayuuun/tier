@@ -212,6 +212,8 @@ async def route_ws(request):
                     if action!='join':
                         raise ValueError('先に部屋に入ってください')
                     code=str(data.get('code','')).upper().strip()
+                    if len(code)!=6 or any(ch not in CODES for ch in code):
+                        raise ValueError('部屋コードは英数字6桁で入力してください')
                     room=ROOMS.get(code)
                     if not room and ROOM_STORE.enabled:
                         # Startup loads only a bounded number of rooms. Before
@@ -230,9 +232,14 @@ async def route_ws(request):
                                 if room:
                                     ROOMS[code]=room
                     if not room:
+                        if not ROOM_STORE.enabled:
+                            raise ValueError(
+                                '部屋が見つかりません。クラウド保存が未設定のため、'
+                                '再起動後や一時保存の期限切れでは復元できません'
+                            )
                         raise ValueError(
-                            '部屋が見つかりません。保存期限切れ、または再起動によって'
-                            'データが失われた可能性があります'
+                            '部屋が見つかりません。クラウドに有効な保存データが'
+                            '見つかりませんでした。期限切れや保存失敗の可能性があります'
                         )
                     name=str(data.get('name','')).strip()[:24]
                     if not name:
