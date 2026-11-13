@@ -89,6 +89,14 @@ async def main():
     store.mark('art',a)
     await store.flush()
     assert store.status=='postgres'
+    # One-by-code art recovery must work even if the room was omitted
+    # from the startup room list.
+    recovered_art=await store.load_art_by_code('ART777')
+    assert recovered_art is not None
+    assert len(recovered_art['strokes'])==2
+    assert recovered_art['members']=={}
+    assert recovered_art['_restoredAt']>0
+    assert await store.load_art_by_code('NOT777') is None
     explicit=await store.save_and_confirm('game',g,timeout=3.0)
     assert isinstance(explicit,float) and explicit>0
     async with store.pool.acquire() as conn:
