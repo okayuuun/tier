@@ -14,6 +14,7 @@ from room_store import store as ROOM_STORE, ART_TTL, ART_RETENTION_HOURS
 
 LOGGER = logging.getLogger("nakami.echa")
 ROOMS = {}
+RESTORE_LOCK = asyncio.Lock()  # Keep simultaneous late joins from overwriting one another.
 CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 WIDTH, HEIGHT = 3072, 2048
 MAX_ROOMS = 36
@@ -211,9 +212,35 @@ async def route_ws(request):
                     if action!='join':
                         raise ValueError('先に部屋に入ってください')
                     code=str(data.get('code','')).upper().strip()
+                    if len(code)!=6 or any(ch not in CODES for ch in code):
+                        raise ValueError('部屋コードは英数字6桁で入力してください')
                     room=ROOMS.get(code)
+                    if not room and ROOM_STORE.enabled:
+                        # Startup loads only a bounded number of rooms. Before
+                        # declaring an old art link lost, look up its snapshot
+                        # directly from Neon; it may still be safely recoverable.
+                        async with RESTORE_LOCK:
+                            room=ROOMS.get(code)
+                            if not room:
+                                try:
+                                    room=await ROOM_STORE.load_art_by_code(code)
+                                except Exception as exc:
+                                    LOGGER.exception("Art room lookup failed")
+                                    raise ValueError(
+                                        '保存先の確認中にエラーが発生しました。時間をおいて再接続してください'
+                                    ) from exc
+                                if room:
+                                    ROOMS[code]=room
                     if not room:
-                        raise ValueError('部屋が見つかりません。再起動で消えた可能性があります')
+                        if not ROOM_STORE.enabled:
+                            raise ValueError(
+                                '部屋が見つかりません。クラウド保存が未設定のため、'
+                                '再起動後や一時保存の期限切れでは復元できません'
+                            )
+                        raise ValueError(
+                            '部屋が見つかりません。クラウドに有効な保存データが'
+                            '見つかりませんでした。期限切れや保存失敗の可能性があります'
+                        )
                     name=str(data.get('name','')).strip()[:24]
                     if not name:
                         raise ValueError('ニックネームを入力してください')
