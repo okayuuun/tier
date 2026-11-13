@@ -63,4 +63,27 @@ vm.runInContext("networkHelp('ok')",artCtx);
 assert.equal(help.hidden,true);
 assert(echa.includes('restored.hidden=!d.restoredAt'));
 assert(echa.includes('d.retentionHours'));
-console.log('PASS recovered banners, retention display and actionable disconnect guidance');
+// A full participant history must never masquerade as an expired/deleted
+// room: the art and its room code are still present on the server.
+let expired=false,seenError='',clientCanRetry=true;
+const statusElements={
+ 'ec-join':{hidden:false},
+ 'ec-join-error':{textContent:''}
+};
+const artErrorCtx={
+ alertUI(message){seenError=message},
+ networkHelp(state){if(state==='lost')expired=true},
+ stopNetworkTimers(){},retryWanted:true,
+ $(id){return statusElements[id]||{hidden:false,textContent:''}}
+};
+vm.createContext(artErrorCtx);
+vm.runInContext(part(echa,'function onMessage(d){','function renderMembers(){'),artErrorCtx);
+vm.runInContext(
+ "onMessage({type:'error',message:'参加履歴がいっぱいです。新しい部屋を作成してください'})",
+ artErrorCtx
+);
+assert.equal(expired,false,'History-full is not a deleted room');
+assert.equal(artErrorCtx.retryWanted,true,'Rejoin remains possible');
+assert.match(seenError,/参加履歴/);
+assert.match(statusElements['ec-join-error'].textContent,/参加履歴/);
+console.log('PASS recovered banners, retention and non-destructive join error guidance');
