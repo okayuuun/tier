@@ -129,7 +129,7 @@ def admit_new_identity(room):
         raise ValueError('参加者の入れ替え中です。少しして再度お試しください')
     token, identity = chosen
     room['identities'].pop(token, None)
-    room['fillLast'].pop(identity['id'], None)
+    room.setdefault('fillLast', {}).pop(identity['id'], None)
 
 
 def clean_old():
