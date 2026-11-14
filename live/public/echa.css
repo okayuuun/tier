@@ -56,3 +56,7 @@
 .ec-room #ec-draw-warning[hidden]{display:none}
 .ec-gesture-option{display:inline-flex!important;align-items:center;gap:7px;cursor:pointer;font-size:12px;font-weight:800;color:#59406e;padding:8px 4px}
 .ec-gesture-option input{width:17px;height:17px;accent-color:#8155a5;cursor:pointer;flex-shrink:0}
+
+/* Live quality is independent of the full-resolution saved stroke data. */
+.ec-quality-control{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#66516d}
+.ec-quality-control select{background:#fff;color:#593b78;padding:7px 9px;border:1px solid #cbb1dc;border-radius:9px;font-size:12px;font-weight:800}

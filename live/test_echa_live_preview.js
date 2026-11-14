@@ -7,7 +7,7 @@ const first=src.indexOf('let previewOnMain=false;');
 const last=src.indexOf('function transform(){',first);
 assert(first>0&&last>first,'Cannot find preview renderer');
 const full=[],pens=[],queued=[],clears=[],transforms=[];
-const overlay={width:1536,height:1024};
+const overlay={width:3072,height:2048};
 const octx={
  save(){},restore(){},setTransform(...args){transforms.push(args)},clearRect(...args){clears.push(args)},
 };
@@ -32,8 +32,8 @@ assert.equal(full.length,0,'pen preview must not recompose the large finished ca
 assert.equal(pens.length,1);
 assert(Math.abs(pens[0].opacity-.4)<.001,'live pen respects layer opacity');
 assert(clears.length>0,'overlay is cleared before preview');
-assert(transforms.some(t=>t[0]===.5&&t[3]===.5),
- 'live overlay must scale strokes to the smaller backing buffer');
+assert(transforms.some(t=>t[0]===1&&t[3]===1),
+ 'default high-quality overlay renders strokes at their original resolution');
 vm.runInContext('schedulePending()',state);
 queued.shift()(145);
 assert.equal(full.length,0,'repeated pen movement stays overlay-only');
