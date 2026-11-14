@@ -6,16 +6,16 @@ const src=fs.readFileSync(__dirname+'/public/echa.js','utf8');
 const first=src.indexOf('let previewOnMain=false;');
 const last=src.indexOf('function transform(){',first);
 assert(first>0&&last>first,'Cannot find preview renderer');
-const full=[],pens=[],queued=[],clears=[];
-const overlay={width:3072,height:2048};
+const full=[],pens=[],queued=[],clears=[],transforms=[];
+const overlay={width:1536,height:1024};
 const octx={
- save(){},restore(){},setTransform(){},clearRect(...args){clears.push(args)},
+ save(){},restore(){},setTransform(...args){transforms.push(args)},clearRect(...args){clears.push(args)},
 };
 const stroke=(target,item)=>pens.push({target,opacity:item.opacity,tool:item.tool});
 const composite=(target,count,live)=>full.push({target,count,live});
 const stats={textContent:''},warn={hidden:true,textContent:''};
 const state={
- octx,ctx:{},overlay,stroke,composite,
+ octx,ctx:{},overlay,stroke,composite,WIDTH:3072,HEIGHT:2048,
  strokes:[{id:'prior'}],drawProblem:'',drawingScheduled:false,
  layers:[{id:'base',visible:true,opacity:0.5}],
  waitingLocal:new Map(),
@@ -32,6 +32,8 @@ assert.equal(full.length,0,'pen preview must not recompose the large finished ca
 assert.equal(pens.length,1);
 assert(Math.abs(pens[0].opacity-.4)<.001,'live pen respects layer opacity');
 assert(clears.length>0,'overlay is cleared before preview');
+assert(transforms.some(t=>t[0]===.5&&t[3]===.5),
+ 'live overlay must scale strokes to the smaller backing buffer');
 vm.runInContext('schedulePending()',state);
 queued.shift()(145);
 assert.equal(full.length,0,'repeated pen movement stays overlay-only');
