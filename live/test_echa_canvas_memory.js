@@ -29,7 +29,7 @@ let rebuilt=0;
 context.resetPaintCache=()=>rebuilt++;
 context.redraw=()=>rebuilt++;
 context.alertUI=msg=>notices.push(msg);
-vm.runInContext(src.slice(end,src.indexOf('function normalizeLayers()',end)),context);
+vm.runInContext(src.slice(end,src.indexOf('function normalizeLayers(data){',end)),context);
 assert.equal(events.contextlost.length,2);
 assert.equal(events.contextrestored.length,2);
 let prevented=false;
