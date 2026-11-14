@@ -20,4 +20,22 @@ assert(src.includes('target.width=WIDTH;target.height=HEIGHT'),
  'PNG export must keep the full 3072x2048 image');
 assert(src.includes('releasePaintCache(key)'),
  'Full-resolution temporary buffers must be freed after export');
-console.log('PASS: 75% less backing-pixel memory with full-resolution PNG output');
+// Simulate the browser discarding and later restoring 2D pixel memory.
+const events={},notices=[];
+for(const canvas of [main,overlay]){
+ canvas.addEventListener=(type,fn)=>{(events[type]??=[]).push(fn)};
+}
+let rebuilt=0;
+context.resetPaintCache=()=>rebuilt++;
+context.redraw=()=>rebuilt++;
+context.alertUI=msg=>notices.push(msg);
+vm.runInContext(src.slice(end,src.indexOf('function normalizeLayers()',end)),context);
+assert.equal(events.contextlost.length,2);
+assert.equal(events.contextrestored.length,2);
+let prevented=false;
+events.contextlost[0]({preventDefault(){prevented=true}});
+events.contextrestored[0]({});
+assert(prevented,'Context loss recovery should be enabled');
+assert.equal(rebuilt,2,'Restored backing store is rebuilt from stroke history');
+assert(notices.some(x=>x.includes('復元')));
+console.log('PASS: 75% less pixel memory, full-resolution PNG, automatic 2D canvas recovery');
