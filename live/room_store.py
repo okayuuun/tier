@@ -66,7 +66,7 @@ MAX_COMPRESSED_BYTES = 5_000_000
 ART_MAX_UNCOMPRESSED_BYTES = 64_000_000
 ART_MAX_COMPRESSED_BYTES = 24_000_000
 SCHEMA_VERSION = 1
-_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask", "_restoredAt"))
+_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_artOutgoing", "_persistTask", "_restoredAt"))
 
 
 def _clean(value):
