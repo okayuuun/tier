@@ -35,7 +35,7 @@ async def main():
         snapshots.append(immutable_snapshot)
         return b'compressed-dummy'
 
-    with patch('room_store.serialize_room', slow_compression):
+    with patch('room_store._encode_clean_room', slow_compression):
         work=asyncio.create_task(store._write_one(('art','TEST42'),3,room))
         await asyncio.sleep(.07)
         assert not work.done(), 'Compression should be running separately'
