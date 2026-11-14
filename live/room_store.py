@@ -90,6 +90,11 @@ def serialize_room(kind, room):
         data = _clean({k: v for k, v in room.items() if k != "members"})
     else:
         data = _clean(room)
+    return _encode_clean_room(kind, data)
+
+
+def _encode_clean_room(kind, data):
+    """Encode an already detached art snapshot, without another full copy."""
     raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
                      ensure_ascii=False, allow_nan=False,
                      separators=(",", ":")).encode("utf-8")
@@ -391,7 +396,7 @@ class RoomStore:
                 # so websocket pings and drawing messages stay responsive.
                 safe_room = _clean({k: v for k, v in room.items()
                                     if k != "members"})
-                data = await asyncio.to_thread(serialize_room, kind, safe_room)
+                data = await asyncio.to_thread(_encode_clean_room, kind, safe_room)
             else:
                 data = serialize_room(kind, room)
         async with self.pool.acquire() as conn:
