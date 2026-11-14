@@ -13,7 +13,7 @@ let localStrokeSerial=0;
 const waitingLocal=new Map(); // Sent marks awaiting acknowledgement.
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 let drawProblem='';
-let preserveLocalArt=false; // An empty remote snapshot must not wipe unsaved ink.
+let preserveLocalArt=false,drawnRoomCode=''; // Keep old ink only for its exact room.
 const paintScratch=new Map();
 const layerPaintCache=new Map();
 // Keep the board and downloaded PNGs at 3072×2048 logical pixels.
@@ -319,9 +319,10 @@ function onMessage(d){
   // If a restarted/failed server unexpectedly returns a new EMPTY canvas,
   // protect the artwork already visible in this tab. Do not send edits or
   // cloud-save the empty room over the lost drawing: offer PNG export instead.
-  const unsafeBlank=lastConnected&&code===d.code&&strokes.length>0&&
+  const unsafeBlank=lastConnected&&drawnRoomCode===d.code&&strokes.length>0&&
     Array.isArray(d.strokes)&&d.strokes.length===0&&Number(d.version)===0;
   preserveLocalArt=unsafeBlank;
+  drawnRoomCode=d.code;
   code=d.code;myId=d.me;owner=d.owner;
   if(cloudSaveInFlight){
    $('ec-save-result').textContent='⚠️ 保存確認中に再接続しました。もう一度保存を確認してください。';
