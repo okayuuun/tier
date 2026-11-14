@@ -26,6 +26,20 @@ for(const canvas of [main,overlay]){
 }
 const ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
+// Browsers can discard 2D canvas contexts under memory pressure. A restored
+// backing store starts blank, so rebuild it from saved stroke history instead
+// of requiring a page reload (which may also lose local, unconfirmed marks).
+for(const canvas of [main,overlay]){
+ canvas.addEventListener('contextlost',ev=>{
+  ev.preventDefault();
+  alertUI('⚠️ 描画用メモリを一時的に解放しました。画面を復元しています…');
+ });
+ canvas.addEventListener('contextrestored',()=>{
+  resetPaintCache();
+  redraw();
+  alertUI('✅ キャンバスを復元しました');
+ });
+}
 function normalizeLayers(data){
  if(!Array.isArray(data)||!data.length)return;
  layers=data;
