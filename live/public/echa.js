@@ -14,7 +14,15 @@ let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLa
 let drawProblem='';
 const paintScratch=new Map();
 const layerPaintCache=new Map();
-const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
+// Keep the board and downloaded PNGs at 3072×2048 logical pixels.
+// Halve ONLY the live backing buffers: 75% less pixel memory per layer.
+const LIVE_SCALE=.5;
+const main=$('ec-canvas'),overlay=$('ec-active');
+for(const canvas of [main,overlay]){
+ canvas.width=Math.round(WIDTH*LIVE_SCALE);
+ canvas.height=Math.round(HEIGHT*LIVE_SCALE);
+}
+const ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
 function normalizeLayers(data){
  if(!Array.isArray(data)||!data.length)return;
@@ -424,7 +432,19 @@ function sceneScratch(w,h){
  if(!canvas){canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;paintScratch.set(key,canvas)}
  return canvas
 }
-function resetPaintCache(){layerPaintCache.clear()}
+function releasePaintCache(key){
+ const entry=layerPaintCache.get(key);
+ if(entry){
+  for(const canvas of entry.images.values()){canvas.width=0;canvas.height=0}
+  layerPaintCache.delete(key)
+ }
+ const scratch=paintScratch.get(key);
+ if(scratch){scratch.width=0;scratch.height=0;paintScratch.delete(key)}
+}
+function resetPaintCache(){
+ for(const key of [...layerPaintCache.keys()])releasePaintCache(key);
+ for(const key of [...paintScratch.keys()])releasePaintCache(key)
+}
 /* Cache finished strokes on each layer individually. Pending pen/eraser input
    is composited onto a temporary copy of that one layer, never on top of the
    whole finished picture. Layer erasers therefore cannot damage other layers.
@@ -528,7 +548,8 @@ function paintPending(){
  }
  if(!drafts.length)return;
  octx.save();
- octx.setTransform(1,0,0,1,0,0);
+ // Brush geometry uses full logical coordinates; scale only preview pixels.
+ octx.setTransform(overlay.width/WIDTH,0,0,overlay.height/HEIGHT,0,0);
  const layer=visible[0];
  for(const s of drafts){
   if((s.layer||'base')!==layer.id)continue;
@@ -780,8 +801,19 @@ function download(blob,filename){
 }
 $('ec-export').addEventListener('click',()=>{
  const target=document.createElement('canvas');target.width=WIDTH;target.height=HEIGHT;
- composite(target.getContext('2d'),strokes.length,false);
- target.toBlob(blob=>blob?download(blob,'nakami-echa-'+code+'-full.png'):alertUI('PNG出力に失敗しました'),'image/png')
+ const key=WIDTH+'x'+HEIGHT;
+ function cleanup(){releasePaintCache(key);target.width=0;target.height=0}
+ try{
+  composite(target.getContext('2d'),strokes.length,false);
+  target.toBlob(blob=>{
+   cleanup();
+   if(blob)download(blob,'nakami-echa-'+code+'-full.png');
+   else alertUI('PNG出力に失敗しました。端末の空きメモリをご確認ください。')
+  },'image/png')
+ }catch(err){
+  console.error('PNG export failed',err);cleanup();
+  alertUI('PNG出力に必要なメモリが足りません。ほかのタブを閉じて再度お試しください。')
+ }
 });
 const modal=$('ec-timeline-modal'),tlCanvas=$('ec-timeline-canvas'),tl=tlCanvas.getContext('2d');
 let tlPlaying=false,tlFrame=null,tlIndex=0,tlDrawn=0,tlLast=0,tlRate=8,recorder=null,recordChunks=[];
@@ -819,7 +851,8 @@ function openTimeline(){
  $('ec-timeline-range').max=strokes.length;playbackReset();playbackDraw(0)
 }
 function closeTimeline(){
- stopPlayback();if(recorder&&recorder.state==='recording')recorder.stop();modal.hidden=true
+ stopPlayback();if(recorder&&recorder.state==='recording')recorder.stop();modal.hidden=true;
+ releasePaintCache(tlCanvas.width+'x'+tlCanvas.height)
 }
 $('ec-timelapse').addEventListener('click',openTimeline);
 $('ec-timeline-close').addEventListener('click',closeTimeline);
