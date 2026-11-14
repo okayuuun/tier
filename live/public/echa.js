@@ -4,9 +4,10 @@
 const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
-let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,retryWanted=true,lastConnected=false,activeName='';
+let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,lastPacketAt=0,retryWanted=true,lastConnected=false,activeName='';
 let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
+const MAX_SILENCE_MS=150000; // Avoid restart loops during a large art sync.
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let localStrokeSerial=0;
 const waitingLocal=new Map(); // Sent marks awaiting acknowledgement.
@@ -197,14 +198,22 @@ function connectRoom(name,isRetry=false){
  arm(100000);
  socket.onopen=()=>{
   if(ws!==socket)return;
-  arm(25000);
+  arm(65000); // Large rooms can take longer to restore and transfer.
   let resumeToken='';
   try{resumeToken=sessionStorage.getItem(resumeKey())||''}catch(_){}
   socket.send(JSON.stringify({type:'join',code,name,ownerKey,resumeToken}))
  };
  socket.onmessage=ev=>{
   if(ws!==socket)return;
-  try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e);alertUI('描画データの処理中にエラーが発生しました')}
+  // A valid server packet proves that the connection is alive even if a
+  // separate pong is delayed by a large room snapshot or a slow renderer.
+  lastPacketAt=Date.now();
+  try{onMessage(JSON.parse(ev.data))}
+  catch(e){
+   console.error('絵チャのデータ読み込みに失敗',e);
+   alertUI('描画の読み込みに失敗しました。再接続して復旧を試みます');
+   try{socket.close(1011,'art render error')}catch(_){}
+  }
  };
  socket.onclose=ev=>{
   if(ws!==socket)return;
@@ -248,7 +257,7 @@ window.addEventListener('pageshow',ev=>{
 document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState!=='visible'||!code||!retryWanted||handedOffToOtherTab)return;
  if(!ws||ws.readyState===WebSocket.CLOSED||
-    (ws.readyState===WebSocket.OPEN&&Date.now()-lastPongAt>90000)){
+    (ws.readyState===WebSocket.OPEN&&Date.now()-Math.max(lastPongAt,lastPacketAt)>MAX_SILENCE_MS)){
   connectRoom(activeName||storedName()||'ゲスト',true)
  }
 });
@@ -315,7 +324,7 @@ function onMessage(d){
   $('ec-save-cloud').hidden=d.persistence==='memory';
   const restoring=lastConnected;
   retryWanted=true;lastConnected=true;reconnectAttempt=0;stopNetworkTimers();
-  lastPongAt=Date.now();
+  lastPongAt=Date.now();lastPacketAt=Date.now();
   if(typeof d.resumeToken==='string'){
    try{sessionStorage.setItem(resumeKey(),d.resumeToken)}catch(_){}
   }
@@ -334,7 +343,7 @@ function onMessage(d){
   const current=ws;
   pingTimer=setInterval(()=>{
    if(ws!==current||current.readyState!==WebSocket.OPEN)return;
-   if(Date.now()-lastPongAt>75000&&document.visibilityState!=='hidden'){
+   if(Date.now()-Math.max(lastPongAt,lastPacketAt)>MAX_SILENCE_MS&&document.visibilityState!=='hidden'){
     alertUI('通信の応答がないため再接続します…');
     try{current.close(4000,'heartbeat timeout')}catch(_){}
     return
