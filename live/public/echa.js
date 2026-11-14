@@ -4,18 +4,42 @@
 const WIDTH=3072,HEIGHT=2048;
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
-let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,retryWanted=true,lastConnected=false,activeName='';
+let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,lastPacketAt=0,retryWanted=true,lastConnected=false,activeName='';
 let handedOffToOtherTab=false;
 const MAX_RECONNECTS=12;
+const MAX_SILENCE_MS=150000; // Avoid restart loops during a large art sync.
 let strokes=[],pending=new Map(),members=[],messages=[],view={x:0,y:0,zoom:.3},activePointer=null,sendQueue=[],moveTimer=null;
 let localStrokeSerial=0;
 const waitingLocal=new Map(); // Sent marks awaiting acknowledgement.
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 let drawProblem='';
+let preserveLocalArt=false,drawnRoomCode=''; // Keep old ink only for its exact room.
 const paintScratch=new Map();
 const layerPaintCache=new Map();
-const main=$('ec-canvas'),overlay=$('ec-active'),ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
+// Keep the board and downloaded PNGs at 3072×2048 logical pixels.
+// Halve ONLY the live backing buffers: 75% less pixel memory per layer.
+const LIVE_SCALE=.5;
+const main=$('ec-canvas'),overlay=$('ec-active');
+for(const canvas of [main,overlay]){
+ canvas.width=Math.round(WIDTH*LIVE_SCALE);
+ canvas.height=Math.round(HEIGHT*LIVE_SCALE);
+}
+const ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
+// Browsers can discard 2D canvas contexts under memory pressure. A restored
+// backing store starts blank, so rebuild it from saved stroke history instead
+// of requiring a page reload (which may also lose local, unconfirmed marks).
+for(const canvas of [main,overlay]){
+ canvas.addEventListener('contextlost',ev=>{
+  ev.preventDefault();
+  alertUI('⚠️ 描画用メモリを一時的に解放しました。画面を復元しています…');
+ });
+ canvas.addEventListener('contextrestored',()=>{
+  resetPaintCache();
+  redraw();
+  alertUI('✅ キャンバスを復元しました');
+ });
+}
 function normalizeLayers(data){
  if(!Array.isArray(data)||!data.length)return;
  layers=data;
@@ -83,7 +107,7 @@ function networkHelp(state){
   ?'⚠️ 接続に時間がかかっています。通信状態を確認し、「↻ 再接続」を押してください。画面に絵が残っている場合はPNG保存もできます。'
   :'🔄 サーバーへの接続を回復しています。画面を閉じずにお待ちください。復帰までは新しい線を送信できません。';
 }
-function connected(){return ws&&ws.readyState===WebSocket.OPEN}
+function connected(){return !preserveLocalArt&&ws&&ws.readyState===WebSocket.OPEN}
 function send(data){if(!connected())return false;try{ws.send(JSON.stringify(data));return true}catch(_){return false}}
 function storedName(){try{return localStorage.getItem('nk_echa_name')||''}catch(_){return ''}}
 $('ec-name').value=storedName();
@@ -189,14 +213,22 @@ function connectRoom(name,isRetry=false){
  arm(100000);
  socket.onopen=()=>{
   if(ws!==socket)return;
-  arm(25000);
+  arm(65000); // Large rooms can take longer to restore and transfer.
   let resumeToken='';
   try{resumeToken=sessionStorage.getItem(resumeKey())||''}catch(_){}
   socket.send(JSON.stringify({type:'join',code,name,ownerKey,resumeToken}))
  };
  socket.onmessage=ev=>{
   if(ws!==socket)return;
-  try{onMessage(JSON.parse(ev.data))}catch(e){console.error('絵チャのデータ読み込みに失敗',e);alertUI('描画データの処理中にエラーが発生しました')}
+  // A valid server packet proves that the connection is alive even if a
+  // separate pong is delayed by a large room snapshot or a slow renderer.
+  lastPacketAt=Date.now();
+  try{onMessage(JSON.parse(ev.data))}
+  catch(e){
+   console.error('絵チャのデータ読み込みに失敗',e);
+   alertUI('描画の読み込みに失敗しました。再接続して復旧を試みます');
+   try{socket.close(1011,'art render error')}catch(_){}
+  }
  };
  socket.onclose=ev=>{
   if(ws!==socket)return;
@@ -240,7 +272,7 @@ window.addEventListener('pageshow',ev=>{
 document.addEventListener('visibilitychange',()=>{
  if(document.visibilityState!=='visible'||!code||!retryWanted||handedOffToOtherTab)return;
  if(!ws||ws.readyState===WebSocket.CLOSED||
-    (ws.readyState===WebSocket.OPEN&&Date.now()-lastPongAt>90000)){
+    (ws.readyState===WebSocket.OPEN&&Date.now()-Math.max(lastPongAt,lastPacketAt)>MAX_SILENCE_MS)){
   connectRoom(activeName||storedName()||'ゲスト',true)
  }
 });
@@ -298,6 +330,13 @@ function onMessage(d){
   alertUI('サーバーの入れ替え中です。再接続を待っています…');return
  }
  if(d.type==='snapshot'){
+  // If a restarted/failed server unexpectedly returns a new EMPTY canvas,
+  // protect the artwork already visible in this tab. Do not send edits or
+  // cloud-save the empty room over the lost drawing: offer PNG export instead.
+  const unsafeBlank=lastConnected&&drawnRoomCode===d.code&&strokes.length>0&&
+    Array.isArray(d.strokes)&&d.strokes.length===0&&Number(d.version)===0;
+  preserveLocalArt=unsafeBlank;
+  drawnRoomCode=d.code;
   code=d.code;myId=d.me;owner=d.owner;
   if(cloudSaveInFlight){
    $('ec-save-result').textContent='⚠️ 保存確認中に再接続しました。もう一度保存を確認してください。';
@@ -307,7 +346,7 @@ function onMessage(d){
   $('ec-save-cloud').hidden=d.persistence==='memory';
   const restoring=lastConnected;
   retryWanted=true;lastConnected=true;reconnectAttempt=0;stopNetworkTimers();
-  lastPongAt=Date.now();
+  lastPongAt=Date.now();lastPacketAt=Date.now();
   if(typeof d.resumeToken==='string'){
    try{sessionStorage.setItem(resumeKey(),d.resumeToken)}catch(_){}
   }
@@ -326,7 +365,7 @@ function onMessage(d){
   const current=ws;
   pingTimer=setInterval(()=>{
    if(ws!==current||current.readyState!==WebSocket.OPEN)return;
-   if(Date.now()-lastPongAt>75000&&document.visibilityState!=='hidden'){
+   if(Date.now()-Math.max(lastPongAt,lastPacketAt)>MAX_SILENCE_MS&&document.visibilityState!=='hidden'){
     alertUI('通信の応答がないため再接続します…');
     try{current.close(4000,'heartbeat timeout')}catch(_){}
     return
@@ -334,17 +373,33 @@ function onMessage(d){
    try{current.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
   waitingLocal.clear();
-  strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
-  pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
+  if(!unsafeBlank){
+   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
+  }
+  pending=unsafeBlank?new Map():new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
-  maxLayers=d.maxLayers||8;drawProblem='';normalizeLayers(d.layers);
+  maxLayers=d.maxLayers||8;
+  drawProblem=unsafeBlank
+   ?'⚠️ サーバーから空のキャンバスが届きました。元の絵をこの画面に保持しています。再読み込みせず、先に「PNG保存」で作品を保存してください。'
+   :'';
+  normalizeLayers(d.layers);
   try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
   history.replaceState(null,'',location.pathname+'?room='+code);
-  redraw();schedulePending();renderChat();renderMembers();
+  if(unsafeBlank){
+   $('ec-save-cloud').disabled=true;
+   $('ec-save-result').textContent='⚠️ サーバー側は空の状態です。クラウドへの上書きを止めています。まずPNG保存してください。';
+   $('ec-recovery').hidden=false;
+   $('ec-recovery-text').textContent=drawProblem;
+   $('ec-draw-warning').hidden=false;
+   $('ec-draw-warning').textContent=drawProblem;
+  }else{
+   redraw();schedulePending();
+  }
+  renderChat();renderMembers();
   if(!restoring)fit();else transform();
-  alertUI('● 接続中');return
+  alertUI(unsafeBlank?'⚠️ 絵を保護しています。PNG保存してください。':'● 接続中');return
  }
  if(d.type==='members'){members=d.members||[];renderMembers();return}
  if(d.type==='chat'){messages.push(d.item);messages=messages.slice(-65);renderChat();return}
@@ -424,7 +479,19 @@ function sceneScratch(w,h){
  if(!canvas){canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;paintScratch.set(key,canvas)}
  return canvas
 }
-function resetPaintCache(){layerPaintCache.clear()}
+function releasePaintCache(key){
+ const entry=layerPaintCache.get(key);
+ if(entry){
+  for(const canvas of entry.images.values()){canvas.width=0;canvas.height=0}
+  layerPaintCache.delete(key)
+ }
+ const scratch=paintScratch.get(key);
+ if(scratch){scratch.width=0;scratch.height=0;paintScratch.delete(key)}
+}
+function resetPaintCache(){
+ for(const key of [...layerPaintCache.keys()])releasePaintCache(key);
+ for(const key of [...paintScratch.keys()])releasePaintCache(key)
+}
 /* Cache finished strokes on each layer individually. Pending pen/eraser input
    is composited onto a temporary copy of that one layer, never on top of the
    whole finished picture. Layer erasers therefore cannot damage other layers.
@@ -528,7 +595,8 @@ function paintPending(){
  }
  if(!drafts.length)return;
  octx.save();
- octx.setTransform(1,0,0,1,0,0);
+ // Brush geometry uses full logical coordinates; scale only preview pixels.
+ octx.setTransform(overlay.width/WIDTH,0,0,overlay.height/HEIGHT,0,0);
  const layer=visible[0];
  for(const s of drafts){
   if((s.layer||'base')!==layer.id)continue;
@@ -780,8 +848,19 @@ function download(blob,filename){
 }
 $('ec-export').addEventListener('click',()=>{
  const target=document.createElement('canvas');target.width=WIDTH;target.height=HEIGHT;
- composite(target.getContext('2d'),strokes.length,false);
- target.toBlob(blob=>blob?download(blob,'nakami-echa-'+code+'-full.png'):alertUI('PNG出力に失敗しました'),'image/png')
+ const key=WIDTH+'x'+HEIGHT;
+ function cleanup(){releasePaintCache(key);target.width=0;target.height=0}
+ try{
+  composite(target.getContext('2d'),strokes.length,false);
+  target.toBlob(blob=>{
+   cleanup();
+   if(blob)download(blob,'nakami-echa-'+code+'-full.png');
+   else alertUI('PNG出力に失敗しました。端末の空きメモリをご確認ください。')
+  },'image/png')
+ }catch(err){
+  console.error('PNG export failed',err);cleanup();
+  alertUI('PNG出力に必要なメモリが足りません。ほかのタブを閉じて再度お試しください。')
+ }
 });
 const modal=$('ec-timeline-modal'),tlCanvas=$('ec-timeline-canvas'),tl=tlCanvas.getContext('2d');
 let tlPlaying=false,tlFrame=null,tlIndex=0,tlDrawn=0,tlLast=0,tlRate=8,recorder=null,recordChunks=[];
@@ -819,7 +898,8 @@ function openTimeline(){
  $('ec-timeline-range').max=strokes.length;playbackReset();playbackDraw(0)
 }
 function closeTimeline(){
- stopPlayback();if(recorder&&recorder.state==='recording')recorder.stop();modal.hidden=true
+ stopPlayback();if(recorder&&recorder.state==='recording')recorder.stop();modal.hidden=true;
+ releasePaintCache(tlCanvas.width+'x'+tlCanvas.height)
 }
 $('ec-timelapse').addEventListener('click',openTimeline);
 $('ec-timeline-close').addEventListener('click',closeTimeline);

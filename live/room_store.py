@@ -66,7 +66,7 @@ MAX_COMPRESSED_BYTES = 5_000_000
 ART_MAX_UNCOMPRESSED_BYTES = 64_000_000
 ART_MAX_COMPRESSED_BYTES = 24_000_000
 SCHEMA_VERSION = 1
-_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_persistTask", "_restoredAt"))
+_PRIVATE_RUNTIME_KEYS = frozenset(("ws", "lock", "notifyLock", "_artOutgoing", "_persistTask", "_restoredAt"))
 
 
 def _clean(value):
@@ -90,6 +90,11 @@ def serialize_room(kind, room):
         data = _clean({k: v for k, v in room.items() if k != "members"})
     else:
         data = _clean(room)
+    return _encode_clean_room(kind, data)
+
+
+def _encode_clean_room(kind, data):
+    """Encode an already detached art snapshot, without another full copy."""
     raw = json.dumps({"v": SCHEMA_VERSION, "kind": kind, "room": data},
                      ensure_ascii=False, allow_nan=False,
                      separators=(",", ":")).encode("utf-8")
@@ -384,7 +389,16 @@ class RoomStore:
             raise RuntimeError("Room store not started")
         kind, code = key
         if room is not None:
-            data = serialize_room(kind, room)
+            if kind == "art":
+                # Snapshot only the JSON-safe state on the event loop, where
+                # brush actions cannot mutate it during the copy. Encoding and
+                # zlib compression of a large drawing then run in a worker,
+                # so websocket pings and drawing messages stay responsive.
+                safe_room = _clean({k: v for k, v in room.items()
+                                    if k != "members"})
+                data = await asyncio.to_thread(_encode_clean_room, kind, safe_room)
+            else:
+                data = serialize_room(kind, room)
         async with self.pool.acquire() as conn:
             if room is None:
                 await conn.execute("""

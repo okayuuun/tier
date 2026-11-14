@@ -168,30 +168,61 @@ def public_members(room):
              'owner':m['owner']} for m in room['members'].values()]
 
 
+MAX_OUTGOING_EVENTS = 120  # Bound buffers for slow/broken recipients.
+
+
+async def _send_queued_art_events(room, socket, queue):
+    """Deliver events in order without blocking the other artists."""
+    try:
+        while not socket.closed:
+            wire = await queue.get()
+            try:
+                await asyncio.wait_for(socket.send_str(wire), 4)
+            except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
+                LOGGER.warning("Disconnecting unreachable art-chat recipient")
+                if not socket.closed:
+                    asyncio.create_task(socket.close(code=1011,
+                                                     message=b'slow recipient'))
+                return
+    except asyncio.CancelledError:
+        raise
+    finally:
+        outgoing = room.get("_artOutgoing", {})
+        current = outgoing.get(socket)
+        if current and current[0] is queue:
+            outgoing.pop(socket, None)
+
+
 async def notify(room, payload, exclude=None):
-    """Preserve event order while sending to peers concurrently and with bounds."""
-    # Brush points arrive many times per second. Scheduling a compressed
-    # full-room PostgreSQL snapshot for every point blocks large canvases.
-    # Persist completed changes instead; the in-progress stroke remains live
-    # via WebSocket and an explicit cloud-save still captures the full room.
+    """Queue live messages promptly, preserving each recipient's event order.
+
+    An old browser or unstable connection must not make everyone else wait
+    four seconds PER brush packet. Each recipient has a bounded FIFO sender
+    that is independent of the artist's drawing / database processing.
+    """
     if payload.get('type') not in ('begin', 'points', 'cancel'):
         ROOM_STORE.mark("art", room)
     wire=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
     async with room.setdefault('notifyLock', asyncio.Lock()):
-        sockets=[ws for ws in list(room['members']) if ws is not exclude and not ws.closed]
-        async def send_one(socket):
-            try:
-                await asyncio.wait_for(socket.send_str(wire), 4)
-                return True
-            except (asyncio.TimeoutError, ConnectionError, RuntimeError, OSError):
-                LOGGER.warning("Disconnecting unreachable art-chat recipient")
-                return False
-        if sockets:
-            results=await asyncio.gather(*(send_one(socket) for socket in sockets))
-            for socket,ok in zip(sockets,results):
-                if not ok and not socket.closed:
-                    # Fire-and-forget close: never delay everyone else's strokes.
-                    asyncio.create_task(socket.close(code=1011,message=b'slow recipient'))
+        outgoing=room.setdefault('_artOutgoing', {})
+        for socket in list(room['members']):
+            if socket is exclude or socket.closed:
+                continue
+            entry=outgoing.get(socket)
+            if entry is None or entry[1].done():
+                queue=asyncio.Queue(maxsize=MAX_OUTGOING_EVENTS)
+                task=asyncio.create_task(_send_queued_art_events(room,socket,queue))
+                outgoing[socket]=(queue,task)
+            else:
+                queue,task=entry
+            if queue.full():
+                LOGGER.warning("Closing art-chat slow recipient: backlog exceeded")
+                task.cancel()
+                outgoing.pop(socket,None)
+                asyncio.create_task(socket.close(code=1011,
+                                                 message=b'slow recipient'))
+                continue
+            queue.put_nowait(wire)
 
 
 def new_room():
@@ -222,7 +253,10 @@ async def create(request):
 async def route_ws(request):
     # Art-chat can rasterize large fills on mobile devices; leave time
     # for their browser to answer protocol pings while app pings arrive.
-    ws=web.WebSocketResponse(heartbeat=60,max_msg_size=250000)
+    # Heavy art-room hydration / browser rendering can delay WebSocket pong.
+    # Application-level keepalives still run every 20 seconds; use a more
+    # tolerant protocol heartbeat to avoid needless disconnect loops.
+    ws=web.WebSocketResponse(heartbeat=120,max_msg_size=250000)
     await ws.prepare(request)
     room=None
     player_id=None
@@ -291,6 +325,9 @@ async def route_ws(request):
                         for previous, member in list(room['members'].items()):
                             if member['id']==player_id and previous is not ws:
                                 room['members'].pop(previous,None)
+                                old_sender=room.get('_artOutgoing',{}).pop(previous,None)
+                                if old_sender:
+                                    old_sender[1].cancel()
                                 if player_id in room['drawing']:
                                     unfinished=room['drawing'].pop(player_id)
                                     room['strokes'].append(unfinished)
@@ -490,6 +527,12 @@ async def route_ws(request):
     except Exception:
         LOGGER.exception("Unexpected art-chat socket failure")
     finally:
+        # Also release the sender for a socket replaced by a second tab:
+        # that socket was removed from 'members' before reaching this block.
+        if room:
+            outgoing=room.get('_artOutgoing',{}).pop(ws,None)
+            if outgoing:
+                outgoing[1].cancel()
         if room and ws in room['members']:
             del room['members'][ws]
             audit_art(request, room, name, "echa_disconnect")
