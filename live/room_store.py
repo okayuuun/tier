@@ -384,7 +384,16 @@ class RoomStore:
             raise RuntimeError("Room store not started")
         kind, code = key
         if room is not None:
-            data = serialize_room(kind, room)
+            if kind == "art":
+                # Snapshot only the JSON-safe state on the event loop, where
+                # brush actions cannot mutate it during the copy. Encoding and
+                # zlib compression of a large drawing then run in a worker,
+                # so websocket pings and drawing messages stay responsive.
+                safe_room = _clean({k: v for k, v in room.items()
+                                    if k != "members"})
+                data = await asyncio.to_thread(serialize_room, kind, safe_room)
+            else:
+                data = serialize_room(kind, room)
         async with self.pool.acquire() as conn:
             if room is None:
                 await conn.execute("""
