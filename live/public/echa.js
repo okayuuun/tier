@@ -16,14 +16,12 @@ let drawProblem='';
 let preserveLocalArt=false,drawnRoomCode=''; // Keep old ink only for its exact room.
 const paintScratch=new Map();
 const layerPaintCache=new Map();
-// Keep the board and downloaded PNGs at 3072×2048 logical pixels.
-// Halve ONLY the live backing buffers: 75% less pixel memory per layer.
-const LIVE_SCALE=.5;
+// Full quality is the DEFAULT. The previous forced 50% live resolution
+// blurred existing artwork even though the saved strokes were still intact.
+// People can opt into a lighter preview if their device needs less memory.
+const RENDER_SCALES={high:1,balanced:.75,light:.5};
+let renderQuality='high';
 const main=$('ec-canvas'),overlay=$('ec-active');
-for(const canvas of [main,overlay]){
- canvas.width=Math.round(WIDTH*LIVE_SCALE);
- canvas.height=Math.round(HEIGHT*LIVE_SCALE);
-}
 const ctx=main.getContext('2d',{alpha:true}),octx=overlay.getContext('2d',{alpha:true});
 const board=$('ec-board'),workspace=$('ec-workspace');
 // Browsers can discard 2D canvas contexts under memory pressure. A restored
@@ -492,6 +490,21 @@ function resetPaintCache(){
  for(const key of [...layerPaintCache.keys()])releasePaintCache(key);
  for(const key of [...paintScratch.keys()])releasePaintCache(key)
 }
+// Switching changes only temporary display buffers. The original stroke
+// coordinates, cloud history and 3072x2048 PNG export are never resampled.
+function setRenderQuality(next){
+ const scale=RENDER_SCALES[next];
+ if(!scale)return false;
+ if(renderQuality===next)return true;
+ resetPaintCache();
+ for(const canvas of [main,overlay]){
+  canvas.width=Math.round(WIDTH*scale);
+  canvas.height=Math.round(HEIGHT*scale)
+ }
+ renderQuality=next;
+ redraw();
+ return true
+}
 /* Cache finished strokes on each layer individually. Pending pen/eraser input
    is composited onto a temporary copy of that one layer, never on top of the
    whole finished picture. Layer erasers therefore cannot damage other layers.
@@ -656,6 +669,26 @@ function zoomAt(factor,clientX,clientY){
 $('ec-fit').addEventListener('click',fit);
 $('ec-zoom-in').addEventListener('click',()=>zoomAt(1.3));
 $('ec-zoom-out').addEventListener('click',()=>zoomAt(1/1.3));
+const renderQualityControl=$('ec-render-quality');
+renderQualityControl.addEventListener('change',()=>{
+ if(activePointer?.mode==='draw'||pending.has(myId)||waitingLocal.size){
+  renderQualityControl.value=renderQuality;
+  alertUI('線を描き終えてから表示画質を変更してください。');
+  return
+ }
+ const mode=renderQualityControl.value;
+ if(!setRenderQuality(mode))return;
+ try{localStorage.setItem('nk_echa_render_quality',mode)}catch(_){}
+ alertUI(mode==='high'
+  ?'✅ 高画質表示に戻しました。保存済みの線もそのままです。'
+  :'ℹ️ 表示だけを軽量化しました。保存データやPNGの画質は変わりません。')
+});
+let preferredQuality='high';
+try{preferredQuality=localStorage.getItem('nk_echa_render_quality')||'high'}catch(_){}
+if(RENDER_SCALES[preferredQuality]){
+ renderQualityControl.value=preferredQuality;
+ setRenderQuality(preferredQuality)
+}
 
 workspace.addEventListener('wheel',ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1.12:1/1.12,ev.clientX,ev.clientY)},{passive:false});
 /* On mobile, two touch pointers pan/zoom the whole board. A pinch discards
