@@ -13,6 +13,7 @@ let localStrokeSerial=0;
 const waitingLocal=new Map(); // Sent marks awaiting acknowledgement.
 let layers=[{id:'base',name:'レイヤー 1',visible:true,opacity:1}],selectedLayer='base',maxLayers=8,selectNewLayer=false;
 let drawProblem='';
+let preserveLocalArt=false; // An empty remote snapshot must not wipe unsaved ink.
 const paintScratch=new Map();
 const layerPaintCache=new Map();
 // Keep the board and downloaded PNGs at 3072×2048 logical pixels.
@@ -92,7 +93,7 @@ function networkHelp(state){
   ?'⚠️ 接続に時間がかかっています。通信状態を確認し、「↻ 再接続」を押してください。画面に絵が残っている場合はPNG保存もできます。'
   :'🔄 サーバーへの接続を回復しています。画面を閉じずにお待ちください。復帰までは新しい線を送信できません。';
 }
-function connected(){return ws&&ws.readyState===WebSocket.OPEN}
+function connected(){return !preserveLocalArt&&ws&&ws.readyState===WebSocket.OPEN}
 function send(data){if(!connected())return false;try{ws.send(JSON.stringify(data));return true}catch(_){return false}}
 function storedName(){try{return localStorage.getItem('nk_echa_name')||''}catch(_){return ''}}
 $('ec-name').value=storedName();
@@ -315,6 +316,12 @@ function onMessage(d){
   alertUI('サーバーの入れ替え中です。再接続を待っています…');return
  }
  if(d.type==='snapshot'){
+  // If a restarted/failed server unexpectedly returns a new EMPTY canvas,
+  // protect the artwork already visible in this tab. Do not send edits or
+  // cloud-save the empty room over the lost drawing: offer PNG export instead.
+  const unsafeBlank=lastConnected&&code===d.code&&strokes.length>0&&
+    Array.isArray(d.strokes)&&d.strokes.length===0&&Number(d.version)===0;
+  preserveLocalArt=unsafeBlank;
   code=d.code;myId=d.me;owner=d.owner;
   if(cloudSaveInFlight){
    $('ec-save-result').textContent='⚠️ 保存確認中に再接続しました。もう一度保存を確認してください。';
@@ -351,17 +358,33 @@ function onMessage(d){
    try{current.send(JSON.stringify({type:'ping'}))}catch(_){}
   },20000);
   waitingLocal.clear();
-  strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
-  pending=new Map((d.drawing||[]).map(x=>[x.by,x]));
+  if(!unsafeBlank){
+   strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
+  }
+  pending=unsafeBlank?new Map():new Map((d.drawing||[]).map(x=>[x.by,x]));
   members=d.members||[];messages=d.messages||[];
-  maxLayers=d.maxLayers||8;drawProblem='';normalizeLayers(d.layers);
+  maxLayers=d.maxLayers||8;
+  drawProblem=unsafeBlank
+   ?'⚠️ サーバーから空のキャンバスが届きました。元の絵をこの画面に保持しています。再読み込みせず、先に「PNG保存」で作品を保存してください。'
+   :'';
+  normalizeLayers(d.layers);
   try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
   history.replaceState(null,'',location.pathname+'?room='+code);
-  redraw();schedulePending();renderChat();renderMembers();
+  if(unsafeBlank){
+   $('ec-save-cloud').disabled=true;
+   $('ec-save-result').textContent='⚠️ サーバー側は空の状態です。クラウドへの上書きを止めています。まずPNG保存してください。';
+   $('ec-recovery').hidden=false;
+   $('ec-recovery-text').textContent=drawProblem;
+   $('ec-draw-warning').hidden=false;
+   $('ec-draw-warning').textContent=drawProblem;
+  }else{
+   redraw();schedulePending();
+  }
+  renderChat();renderMembers();
   if(!restoring)fit();else transform();
-  alertUI('● 接続中');return
+  alertUI(unsafeBlank?'⚠️ 絵を保護しています。PNG保存してください。':'● 接続中');return
  }
  if(d.type==='members'){members=d.members||[];renderMembers();return}
  if(d.type==='chat'){messages.push(d.item);messages=messages.slice(-65);renderChat();return}
