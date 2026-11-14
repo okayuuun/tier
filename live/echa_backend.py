@@ -325,6 +325,9 @@ async def route_ws(request):
                         for previous, member in list(room['members'].items()):
                             if member['id']==player_id and previous is not ws:
                                 room['members'].pop(previous,None)
+                                old_sender=room.get('_artOutgoing',{}).pop(previous,None)
+                                if old_sender:
+                                    old_sender[1].cancel()
                                 if player_id in room['drawing']:
                                     unfinished=room['drawing'].pop(player_id)
                                     room['strokes'].append(unfinished)
@@ -524,10 +527,13 @@ async def route_ws(request):
     except Exception:
         LOGGER.exception("Unexpected art-chat socket failure")
     finally:
-        if room and ws in room['members']:
+        # Also release the sender for a socket replaced by a second tab:
+        # that socket was removed from 'members' before reaching this block.
+        if room:
             outgoing=room.get('_artOutgoing',{}).pop(ws,None)
             if outgoing:
                 outgoing[1].cancel()
+        if room and ws in room['members']:
             del room['members'][ws]
             audit_art(request, room, name, "echa_disconnect")
             if player_id in room['drawing']:
