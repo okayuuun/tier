@@ -22,25 +22,25 @@ async def main():
         async with TestClient(TestServer(app)) as client:
             created=await (await client.post('/api/echa/create')).json()
             code=created['code']
-            assert (created['width'],created['height'])==(1920,1280)
+            assert (created['width'],created['height'])==(2048,1365)
             room=art.ROOMS[code]
-            assert room['maxLayers']==4 and room['undoHistory']==[]
+            assert room['maxLayers']==3 and room['undoHistory']==[]
             ws=await client.ws_connect('/api/echa/ws')
             await ws.send_json({'type':'join','code':code,'name':'作者',
                                 'ownerKey':created['ownerKey']})
             snap=await receive(ws,'snapshot')
-            assert (snap['width'],snap['height'],snap['maxLayers'])==(1920,1280,4)
+            assert (snap['width'],snap['height'],snap['maxLayers'])==(2048,1365,3)
             await receive(ws,'members')
 
-            # Four layers at most, with no destructive removal.
-            for _ in range(3):
+            # Three layers at most, with no destructive removal.
+            for _ in range(2):
                 await ws.send_json({'type':'layer_op','op':'add'})
                 await receive(ws,'layers')
-            assert len(room['layers'])==4
+            assert len(room['layers'])==3
             await ws.send_json({'type':'layer_op','op':'add'})
             extra=await receive(ws,'error')
-            assert '4枚' in extra['message']
-            assert len(room['layers'])==4
+            assert '3枚' in extra['message']
+            assert len(room['layers'])==3
 
             # All pen strokes remain; undo only reaches the most recent 12.
             for i in range(15):
@@ -63,8 +63,8 @@ async def main():
             assert len(remaining['strokes'])==3
             assert len(room['strokes'])==3
             saved=deserialize_room('art',serialize_room('art',room))
-            assert saved['width']==1920 and saved['height']==1280
-            assert saved['maxLayers']==4 and len(saved['strokes'])==3
+            assert saved['width']==2048 and saved['height']==1365
+            assert saved['maxLayers']==3 and len(saved['strokes'])==3
             assert saved['undoHistory']==[]
 
             # Old rooms remain at their original size with all 8 layers.
