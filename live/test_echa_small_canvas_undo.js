@@ -14,12 +14,12 @@ const context={
 };
 vm.createContext(context);
 vm.runInContext(src.slice(dimensionStart,dimensionEnd),context);
-vm.runInContext('configureRoomSize(1920,1280)',context);
-assert.equal(context.WIDTH,1920);
-assert.equal(main.width,1920);
-assert.equal(overlay.height,1280);
-assert.equal(board.style.width,'1920px');
-assert.match(sizeLabel.textContent,/1920/);
+vm.runInContext('configureRoomSize(2048,1365)',context);
+assert.equal(context.WIDTH,2048);
+assert.equal(main.width,2048);
+assert.equal(overlay.height,1365);
+assert.equal(board.style.width,'2048px');
+assert.match(sizeLabel.textContent,/2048/);
 assert.equal(cleared,1);
 vm.runInContext('configureRoomSize(3072,2048)',context);
 assert.equal(main.width,3072,'legacy rooms remain 3072x2048');
@@ -30,7 +30,7 @@ const undoEnd=src.indexOf('function composite(',undoStart);
 assert(undoStart>0&&undoEnd>undoStart);
 const changed=[],untouched=[],resets=[];
 function fakeCanvas(){
- const obj={width:1920,height:1280};
+ const obj={width:2048,height:1365};
  const context={save(){},restore(){},setTransform(){}};
  obj.getContext=()=>context;
  context.canvas=obj;
@@ -38,9 +38,9 @@ function fakeCanvas(){
 }
 const base=fakeCanvas(),front=fakeCanvas();
 const entry={count:3,images:new Map([['base',base],['front',front]])};
-const room={WIDTH:1920,HEIGHT:1280,
+const room={WIDTH:2048,HEIGHT:1365,
  strokes:[{id:'a',tool:'pen',layer:'base'},{id:'b',tool:'pen',layer:'front'}],
- layerPaintCache:new Map([['1920x1280',entry]]),
+ layerPaintCache:new Map([['2048x1365',entry]]),
  stroke(ctx,s){changed.push(s.layer)},
  resetPaintCache(){resets.push('reset')},releasePaintCache(){}};
 vm.createContext(room);
