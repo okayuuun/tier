@@ -25,7 +25,7 @@ const state={
  codeRoom:'RVSQXT',pending:new Map(),waitingLocal:new Map(),
  members:[],messages:[],layers:[{id:'base',visible:true,opacity:1}],
  drawProblem:'',lastError:'',renderChat(){},renderMembers(){},
- stopNetworkTimers(){},networkHelp(){},normalizeLayers(){},
+ stopNetworkTimers(){},networkHelp(){},normalizeLayers(){},configureRoomSize(){},
  resetPaintCache(){},redraw(){redrawn++},schedulePending(){},
  fit(){},transform(){},alertUI(msg){alerts.push(msg)},$,
  setInterval(){return 1},

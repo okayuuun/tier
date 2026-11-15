@@ -151,6 +151,13 @@ def deserialize_room(kind, blob):
         room["drawing"] = {}
         room["members"] = {}
         room["notifyLock"] = asyncio.Lock()
+        # Earlier rooms predate per-room dimensions and undo horizons.
+        # Keep their original large canvases and all 8 layers intact.
+        room.setdefault("width", 3072)
+        room.setdefault("height", 2048)
+        room.setdefault("maxLayers", 8)
+        room.setdefault("undoHistory", [
+            stroke["id"] for stroke in room["strokes"][-12:]])
         room.setdefault("last", time.time())
     return room
 

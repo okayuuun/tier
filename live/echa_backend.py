@@ -16,11 +16,14 @@ LOGGER = logging.getLogger("nakami.echa")
 ROOMS = {}
 RESTORE_LOCK = asyncio.Lock()  # Keep simultaneous late joins from overwriting one another.
 CODES = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-WIDTH, HEIGHT = 3072, 2048
+WIDTH, HEIGHT = 3072, 2048  # Legacy room and backup resolution.
+NEW_WIDTH, NEW_HEIGHT = 1920, 1280  # New rooms only: 61% fewer pixels.
 MAX_ROOMS = 36
 MAX_USERS = 12
 MAX_IDENTITIES = 60  # Stored reconnect credentials, not a lifetime guest limit.
-MAX_LAYERS = 8
+MAX_LAYERS = 8  # Preserve existing 8-layer artworks.
+NEW_MAX_LAYERS = 4
+UNDO_LIMIT = 12  # Fast recent operations, not a lifetime undo stack.
 MAX_POINTS = 320
 MAX_MESSAGES = 65
 FILL_COOLDOWN = 0.65  # seconds, per participant
@@ -46,13 +49,31 @@ def new_layer(ident, name):
     return {'id': ident, 'name': name, 'visible': True, 'opacity': 1.0}
 
 
+def undo_history(room):
+    """Keep only the newest 12 undoable actions, retaining all visual ink."""
+    history = room.get('undoHistory')
+    if not isinstance(history, list):
+        history = [s['id'] for s in room['strokes'][-UNDO_LIMIT:]]
+        room['undoHistory'] = history
+    return history
+
+
+def remember_undoable(room, stroke):
+    history = undo_history(room)
+    if stroke['id'] not in history:
+        history.append(stroke['id'])
+    if len(history) > UNDO_LIMIT:
+        del history[:-UNDO_LIMIT]
+
+
 def change_layer(room, member, data):
     """Update shared layers. Deletion is owner-only and prunes deleted ink."""
     layers = room['layers']
     op = data.get('op')
     if op == 'add':
-        if len(layers) >= MAX_LAYERS:
-            raise ValueError(f'レイヤーは{MAX_LAYERS}枚までです')
+        limit = room.get('maxLayers', MAX_LAYERS)
+        if len(layers) >= limit:
+            raise ValueError(f'この部屋のレイヤーは{limit}枚までです')
         room['layerSeq'] += 1
         layer = new_layer('layer_' + str(room['layerSeq']),
                           'レイヤー ' + str(room['layerSeq']))
@@ -93,6 +114,9 @@ def change_layer(room, member, data):
             raise ValueError('最後のレイヤーは削除できません')
         layers.pop(index)
         room['strokes'] = [s for s in room['strokes'] if s.get('layer','base') != ident]
+        valid_ids = {stroke['id'] for stroke in room['strokes']}
+        room['undoHistory'] = [sid for sid in room.get('undoHistory', [])
+                               if sid in valid_ids]
         room['drawing'] = {pid:s for pid,s in room['drawing'].items()
                            if s.get('layer','base') != ident}
         return {'deleted':ident}
@@ -235,6 +259,8 @@ def new_room():
             break
     token=secrets.token_urlsafe(24)
     ROOMS[code]={'code':code,'ownerKey':token,'members':{},'strokes':[],
+                 'width':NEW_WIDTH,'height':NEW_HEIGHT,'maxLayers':NEW_MAX_LAYERS,
+                 'undoHistory':[],
                  'drawing':{},'messages':[], 'last':time.time(),'version':0,
                  'layers':[new_layer('base','レイヤー 1')], 'layerSeq':1,
                  'fillLast':{}, 'identities':{},
@@ -246,7 +272,8 @@ def new_room():
 async def create(request):
     code,key=new_room()
     audit_art(request, ROOMS[code], "作成者（入室前）", "echa_create")
-    return web.json_response({'code':code,'ownerKey':key,'width':WIDTH,'height':HEIGHT},
+    return web.json_response({'code':code,'ownerKey':key,
+                              'width':NEW_WIDTH,'height':NEW_HEIGHT},
                              headers={'Cache-Control':'no-store'})
 
 
@@ -331,6 +358,7 @@ async def route_ws(request):
                                 if player_id in room['drawing']:
                                     unfinished=room['drawing'].pop(player_id)
                                     room['strokes'].append(unfinished)
+                                    remember_undoable(room, unfinished)
                                     room['version']+=1
                                     await notify(room,{'type':'end','stroke':unfinished,'version':room['version']})
                                 await previous.close(code=1000,message=b'replaced')
@@ -353,9 +381,10 @@ async def route_ws(request):
                     room['last']=time.time()
                     await ws.send_json({'type':'snapshot','code':code,'me':player_id,
                         'resumeToken':resume_token,'owner':identity['owner'],
-                        'width':WIDTH,'height':HEIGHT,
+                        'width':room.get('width',WIDTH),'height':room.get('height',HEIGHT),
                         'members':public_members(room),'strokes':room['strokes'],
-                        'layers':room['layers'], 'maxLayers':MAX_LAYERS,
+                        'layers':room['layers'],
+                        'maxLayers':room.get('maxLayers',MAX_LAYERS),
                         'drawing':list(room['drawing'].values()),'messages':room['messages'],
                         'version':room['version'],
                         'restoredAt':room.get('_restoredAt'),
@@ -434,6 +463,7 @@ async def route_ws(request):
                     if stroke:
                         # A completed stroke is the atomic unit of history.
                         room['strokes'].append(stroke)
+                        remember_undoable(room,stroke)
                         room['version']+=1
                         await notify(room,{'type':'end','stroke':stroke,'version':room['version']})
                 elif action=='fill':
@@ -464,6 +494,7 @@ async def route_ws(request):
                           'color':props['color'],'opacity':props['opacity'],
                           'ts':now}
                     room['strokes'].append(item)
+                    remember_undoable(room,item)
                     room['version']+=1
                     await notify(room,{'type':'end','stroke':item,'version':room['version']})
                     audit_art(request, room, name, "echa_fill")
@@ -478,18 +509,27 @@ async def route_ws(request):
                     await notify(room,payload)
                     audit_art(request, room, name, "echa_layer", str(data.get("op",""))[:16])
                 elif action=='undo':
+                    # Recent-history cap avoids rescanning unlimited old marks.
+                    # Old ink is NOT deleted merely because its undo slot expires.
+                    recent=undo_history(room)
                     found=next((i for i in range(len(room['strokes'])-1,-1,-1)
-                                if room['strokes'][i]['by']==player_id),None)
+                                if room['strokes'][i]['id'] in recent
+                                and room['strokes'][i]['by']==player_id),None)
                     if found is not None:
                         removed=room['strokes'].pop(found)
+                        recent.remove(removed['id'])
                         room['version']+=1
                         await notify(room,{'type':'remove','id':removed['id'],
                                            'version':room['version']})
+                    # No own mark among the newest 12? Do nothing as before.
+                    # This also keeps older clients from treating undo as a
+                    # fatal draw error or losing their pending paint preview.
                 elif action=='clear':
                     if not member['owner']:
                         raise ValueError('全消去できるのは部屋の作成者だけです')
                     room['strokes'].clear()
                     room['drawing'].clear()
+                    room['undoHistory'].clear()
                     room['version']+=1
                     await notify(room,{'type':'clear','version':room['version']})
                     audit_art(request, room, name, "echa_clear")
@@ -540,6 +580,7 @@ async def route_ws(request):
                 # Preserve a disconnected user's completed portion of the stroke.
                 stroke=room['drawing'].pop(player_id)
                 room['strokes'].append(stroke)
+                remember_undoable(room,stroke)
                 room['version']+=1
                 await notify(room,{'type':'end','stroke':stroke,'version':room['version']})
             room['last']=time.time()

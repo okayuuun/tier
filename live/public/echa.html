@@ -26,7 +26,7 @@
  <label>ニックネーム<input id="ec-name" type="text" maxlength="24" placeholder="例：おかゆ"></label>
  <label>ルームコード（参加するときだけ）<input id="ec-code" type="text" maxlength="6" placeholder="6桁のコード" autocapitalize="characters"></label>
  <div class="ec-row"><button class="ec-primary" id="ec-create">新しいキャンバスを作る</button><button id="ec-join-btn">ルームに参加</button></div>
- <p class="ec-small">最大12人まで同時に描けます。スマホ・タブレット・PCで参加可能。ログイン不要で利用できます。</p>
+ <p class="ec-small">新しく作る部屋は1920×1280px・最大4レイヤーです。既存の部屋の作品サイズやレイヤーは変更しません。最大12人まで同時に描けます。スマホ・タブレット・PCで参加可能です。</p>
  <p class="ec-small">描いた線や消しゴム、塗りつぶしの回数に固定の上限はありません。長時間の制作では端末・サーバーの容量を考慮し、こまめにPNG保存してください。</p>
 <p class="ec-small">管理者専用画面には、参加時のニックネーム・時刻・部屋コード・主な操作の種類が記録されます。チャット本文や絵そのもの、IPアドレスは管理ログには保存しません。</p>
 <p class="ec-connection-note">接続が切れた場合は自動で再接続します。保存機能が有効な場合、再起動後も保存済みの絵を復元します。</p>
@@ -84,7 +84,7 @@
            <option value="light">軽量表示</option>
          </select>
        </label>
-       <div class="ec-small">キャンバス 3072 × 2048 px · <span id="ec-strokes">0本</span></div>
+       <div class="ec-small">キャンバス <span id="ec-canvas-size">3072 × 2048 px</span> · <span id="ec-strokes">0本</span> · 1手戻すは直近12手まで</div>
      </div>
    </div>
    <aside class="ec-side">
@@ -111,6 +111,6 @@
   </div>
 </div>
 </main>
-<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=17" defer></script>
+<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=18" defer></script>
 </body>
 </html>
