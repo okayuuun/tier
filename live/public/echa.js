@@ -938,20 +938,60 @@ $('ec-timelapse').addEventListener('click',openTimeline);
 $('ec-timeline-close').addEventListener('click',closeTimeline);
 $('ec-timeline-play').addEventListener('click',play);
 $('ec-timeline-range').addEventListener('input',ev=>{stopPlayback();playbackDraw(Number(ev.target.value))});
+// MediaRecorder support differs by browser. Only label a file .mp4 when
+// the browser actually encodes an MP4 container; renaming WebM is invalid.
+function supportedRecordingTypes(){
+ return ['video/mp4;codecs=avc1.42E01E','video/mp4;codecs=avc1.424028',
+         'video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8',
+         'video/webm'].filter(type=>MediaRecorder.isTypeSupported(type))
+}
 $('ec-record').addEventListener('click',()=>{
- if(!tlCanvas.captureStream||typeof MediaRecorder==='undefined')return alertUI('このブラウザは動画出力に対応していません');
+ if(!tlCanvas.captureStream||typeof MediaRecorder==='undefined'){
+  alertUI('このブラウザでは動画出力できません。画像は「全体PNG保存」をご利用ください。');
+  return
+ }
  if(recorder&&recorder.state==='recording')return;
- const fmt=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(v=>MediaRecorder.isTypeSupported(v));
- if(!fmt)return alertUI('このブラウザはWebM動画の保存に対応していません');
+ const types=supportedRecordingTypes();
+ if(!types.length)return alertUI('このブラウザではMP4/WebMを録画できません。PNG保存をご利用ください。');
  stopPlayback();playbackReset();playbackDraw(0);
  recordChunks=[];
- recorder=new MediaRecorder(tlCanvas.captureStream(30),{mimeType:fmt});
- recorder.ondataavailable=ev=>{if(ev.data.size)recordChunks.push(ev.data)};
- recorder.onstop=()=>{
-  if(recordChunks.length)download(new Blob(recordChunks,{type:fmt}),'nakami-echa-'+code+'-timelapse.webm');
-  $('ec-record').disabled=false;recorder=null;
+ const stream=tlCanvas.captureStream(30);
+ let chosen='';
+ for(const type of types){
+  try{recorder=new MediaRecorder(stream,{mimeType:type});chosen=type;break}
+  catch(_){/* Try another supported container on the same device. */}
+ }
+ if(!recorder){
+  stream.getTracks().forEach(t=>t.stop());
+  return alertUI('録画を開始できませんでした。PNG保存をご利用ください。')
+ }
+ const recording=recorder;
+ const format=(recording.mimeType||chosen).toLowerCase();
+ const mp4=format.startsWith('video/mp4');
+ recording.ondataavailable=ev=>{if(ev.data&&ev.data.size)recordChunks.push(ev.data)};
+ recording.onerror=()=>{
+  alertUI('⚠️ 動画保存に失敗しました。作品は全体PNG保存で保護してください。')
  };
- recorder.start(500);$('ec-record').disabled=true;play()
+ recording.onstop=()=>{
+  if(recordChunks.length){
+   const ext=mp4?'mp4':'webm';
+   download(new Blob(recordChunks,{type:format}),
+    'nakami-echa-'+code+'-timelapse.'+ext);
+   alertUI(mp4?'✅ MP4動画を保存しました。':
+    'ℹ️ このブラウザはMP4録画に非対応のためWebMで保存しました。')
+  }else alertUI('動画を保存できませんでした。PNG保存をご利用ください。');
+  stream.getTracks().forEach(t=>t.stop());
+  $('ec-record').disabled=false;recorder=null;
+  $('ec-record').textContent='🎥 動画を保存（MP4優先）';
+ };
+ try{
+  recording.start(500);$('ec-record').disabled=true;play();
+  $('ec-record').textContent=mp4?'🎥 MP4録画中…':'🎥 WebM録画中…'
+ }catch(_){
+  stream.getTracks().forEach(t=>t.stop());
+  $('ec-record').disabled=false;recorder=null;
+  alertUI('録画を開始できませんでした。PNG保存をご利用ください。')
+ }
 });
 window.addEventListener('resize',()=>{if($('ec-room').hidden===false)fit()});
 const prefill=new URLSearchParams(location.search).get('room');
