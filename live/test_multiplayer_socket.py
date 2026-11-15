@@ -24,17 +24,25 @@ async def main():
         first = await client.ws_connect('/ws')
         sid1='browser_session_first_player_1234'
         sid2='browser_session_second_player_5678'
-        await first.send_json({'type':'create','name':'主催者','sid':sid1})
+        await first.send_json({'type':'create','name':'主催者','sid':sid1,
+                               'favorites':['tier','wolf','not-a-real-game','tier']})
         a=await state(first)
         code=a['room']['code']
         original_id=a['me']
         assert a['room']['owner']==original_id
+        assert a['room']['players'][0]['favorites']==['tier','wolf']
         second=await client.ws_connect('/ws')
-        await second.send_json({'type':'join','code':code,'name':'友達','sid':sid2})
+        await second.send_json({'type':'join','code':code,'name':'友達','sid':sid2,
+                                'favorites':['wolf','quiz']})
         b=await state(second)
         assert len(b['room']['players'])==2
         assert any(p['name']=='友達' for p in b['room']['players'])
+        assert next(p for p in b['room']['players'] if p['name']=='友達')['favorites']==['wolf','quiz']
         await state(first)
+        await second.send_json({'type':'favorites','games':['tier','soup','unknown','tier']})
+        updated=await state(first)
+        assert next(p for p in updated['room']['players'] if p['name']=='友達')['favorites']==['tier','soup']
+        await state(second)
         await second.send_json({'type':'ping'})
         ping=await asyncio.wait_for(second.receive_json(),5)
         assert ping['type']=='pong'
@@ -48,6 +56,7 @@ async def main():
         assert again['room']['code']==code
         assert len(again['room']['players'])==2
         assert all(p['online'] for p in again['room']['players'])
+        assert next(p for p in again['room']['players'] if p['id']==original_id)['favorites']==['tier','wolf']
         await state(second)
         await resumed.send_json({'type':'ping'})
         pong=await asyncio.wait_for(resumed.receive_json(),5)
