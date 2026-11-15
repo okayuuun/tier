@@ -1,7 +1,7 @@
 'use strict';
 /* Nakamikurabe live paint room: no account or database required. */
 (()=>{
-const WIDTH=3072,HEIGHT=2048;
+let WIDTH=3072,HEIGHT=2048; // Old rooms remain full size; new rooms send their own dimensions.
 const $=id=>document.getElementById(id);
 let ws=null,code='',myId='',owner=false,ownerKey='',tool='pen',spaceHeld=false;
 let reconnectAttempt=0,reconnectTimer=null,pingTimer=null,handshakeTimer=null,lastPongAt=0,lastPacketAt=0,retryWanted=true,lastConnected=false,activeName='';
@@ -372,6 +372,7 @@ function onMessage(d){
   },20000);
   waitingLocal.clear();
   if(!unsafeBlank){
+   configureRoomSize(Number(d.width)||3072,Number(d.height)||2048);
    strokes=Array.isArray(d.strokes)?d.strokes:[];resetPaintCache();
   }
   pending=unsafeBlank?new Map():new Map((d.drawing||[]).map(x=>[x.by,x]));
@@ -422,7 +423,14 @@ function onMessage(d){
   }else pending.delete(d.stroke.by);
   redraw();return
  }
- if(d.type==='remove'){strokes=strokes.filter(s=>s.id!==d.id);resetPaintCache();redraw();updateCount();return}
+ if(d.type==='remove'){
+  const i=strokes.findIndex(s=>s.id===d.id);
+  if(i>=0){
+   const removed=strokes.splice(i,1)[0];
+   undoCachedInk(removed);
+  }
+  redraw();return
+ }
  if(d.type==='clear'){strokes=[];pending.clear();waitingLocal.clear();resetPaintCache();redraw();schedulePending();updateCount();return}
  if(d.type==='layers'){
    resetPaintCache(); // Rebuild fill boundaries after shared layer order/visibility changes.
@@ -505,6 +513,23 @@ function setRenderQuality(next){
  redraw();
  return true
 }
+function configureRoomSize(width,height){
+ // Only the server-provided room dimensions change the actual canvas.
+ // These dimensions are per-room, so older high-resolution drawings keep
+ // their original size and exported PNG quality.
+ if(!Number.isInteger(width)||!Number.isInteger(height)||
+    width<500||height<400||width>3072||height>2048)return;
+ if(WIDTH===width&&HEIGHT===height)return;
+ WIDTH=width;HEIGHT=height;
+ board.style.width=WIDTH+'px';board.style.height=HEIGHT+'px';
+ resetPaintCache();
+ const scale=RENDER_SCALES[renderQuality];
+ for(const canvas of [main,overlay]){
+  canvas.width=Math.round(WIDTH*scale);
+  canvas.height=Math.round(HEIGHT*scale)
+ }
+ $('ec-canvas-size').textContent=WIDTH+' × '+HEIGHT+' px';
+}
 /* Cache finished strokes on each layer individually. Pending pen/eraser input
    is composited onto a temporary copy of that one layer, never on top of the
    whole finished picture. Layer erasers therefore cannot damage other layers.
@@ -558,6 +583,33 @@ function renderedLayers(w,h,count){
  }
  entry.count=count;
  return entry.images
+}
+function undoCachedInk(removed){
+ // A simple undo previously cleared ALL layer caches then replayed every
+ // stroke in the whole picture, which froze large collaborative canvases.
+ // For pen/eraser-only paintings, rebuild the modified layer alone.
+ // Fills depend on historical boundaries across layers, so keep the safe
+ // full-replay fallback whenever the painting contains a fill.
+ if(!removed||strokes.some(s=>s.tool==='fill')){
+  resetPaintCache();return
+ }
+ const targetLayer=removed.layer||'base';
+ for(const [key,entry] of [...layerPaintCache]){
+  if(entry.count!==strokes.length+1){
+   releasePaintCache(key);continue
+  }
+  const c=entry.images.get(targetLayer);
+  if(!c){entry.count=strokes.length;continue}
+  const w=c.width,h=c.height;
+  c.width=w; c.height=h;
+  const context=c.getContext('2d');
+  context.save();context.setTransform(w/WIDTH,0,0,h/HEIGHT,0,0);
+  for(const s of strokes){
+   if((s.layer||'base')===targetLayer)stroke(context,s)
+  }
+  context.restore();
+  entry.count=strokes.length
+ }
 }
 function composite(target,count=strokes.length,live=false){
  const w=target.canvas.width,h=target.canvas.height;
