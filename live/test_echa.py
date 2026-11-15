@@ -27,7 +27,7 @@ async def main():
         one=await client.ws_connect('/api/echa/ws')
         await one.send_json({'type':'join','code':code,'name':'作者','ownerKey':key})
         first=await take_type(one,'snapshot')
-        assert first['owner'] and first['strokes']==[] and first['width']==1920 and first['height']==1280 and first['maxLayers']==4
+        assert first['owner'] and first['strokes']==[] and first['width']==2048 and first['height']==1365 and first['maxLayers']==3
         await take_type(one,'members')
         two=await client.ws_connect('/api/echa/ws')
         await two.send_json({'type':'join','code':code,'name':'参加者'})
