@@ -526,7 +526,7 @@ async def route_ws(request):
                     for stroke in room['strokes']:
                         if stroke.get('tool')!='fill' and 'width' in stroke:
                             stroke['width']=max(1,min(90,
-                                int(round(float(stroke['width'])*ratio))))
+                                int(float(stroke['width'])*ratio+0.5)))
                     room['width']=NEW_WIDTH
                     room['height']=NEW_HEIGHT
                     # Preserve every existing layer, including an older room
