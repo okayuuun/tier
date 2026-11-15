@@ -130,7 +130,40 @@ function forgetRecentRoom(code){
  window.NKRecent?.forget(code);
  landing();
 }
-function landing(){let code=new URLSearchParams(location.search).get('room')||'';app.innerHTML=`<section class="hero"><div class="kicker">REALTIME / みんなで参加</div><h1>予想が当たると、<br>もっと仲良くなる。</h1><p class="lead">各自が秘密の正解を決め、順番に主役になろう。ほかの全員がその人の答えを予想して、まとめて答え合わせ！</p></section><div class="nk-landing-modes"><a class="nk-mode-card" href="/studio"><strong>✏️ ひとりで作る・出題する</strong><small>自作ゲーム、友達に出すリンク、プロフィール、保存データ</small></a><a class="nk-mode-card" href="#join-lobby" onclick="document.getElementById('nickname')?.focus()"><strong>👥 みんなで遊ぶ</strong><small>ルームを作って、友達とリアルタイム参加</small></a></div><div class="nk-my-profile">${NKM.avatarHTML(NKM.profile(),38)} <b>${esc(NKM.profile().name||'ゲスト')}</b> <a href="/studio">アイコン・名前を設定</a></div><div class="nk-landing-modes"><a class="nk-mode-card" href="/profile-maker"><strong>🌈 自由なプロフィールを作る</strong><small>色・画像・カード・項目・レイアウトを自分好みに編集して友達に共有！</small></a><a class="nk-mode-card" href="/echa"><strong>🎨 みんなの絵チャ</strong><small>広い共同キャンバスに同時お絵描き。全体PNG・タイムラプス動画保存も！</small></a></div>${recentGameSection()}${recentEchaLink()}<div data-master-game="millishira" class="nk-landing-modes"><a class="nk-mode-card" href="/milli"><strong>🖼️ キャラクター・ミリしら</strong><small>キャラ画像と自由な質問で、友達に設定を想像してもらおう</small></a></div>${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).map(([k,d])=>`<div class="game-option" data-game-key="${k}" data-master-game="${k}"><div class="card"><span>${d.icon}</span><strong>${d.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${d.desc}</small></div><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 ルールを見る</button></div>`).join('')}</div>${panel('START / ルーム参加','友達といっしょに遊ぼう',`<label id="join-lobby" class="labeled">あなたのニックネーム</label><input id="nickname" class="field" maxlength="24" placeholder="例：おかゆ" value="${esc(sessionStorage.getItem('nakami_name')||NKM.profile().name||'')}"><label class="labeled">ルームコード（友達の部屋に入る場合）</label><input id="roomcode" class="field" maxlength="6" value="${esc(code.toUpperCase())}" placeholder="例：AB12CD" autocapitalize="characters"><div class="btns">${action('新しい部屋を作る','connectNow("create")')}${action('ルームに参加する','connectNow("join")','alt')}</div><div class="notice">2人以上で遊べます。公開後はURLを送るだけで各自のスマホから参加可能。公開前は同じPCやLAN上で動作確認できます。参加中の操作・ゲーム結果はルーム管理者とは別のサイト管理者が履歴として確認でき、ニックネーム・時刻・得点などが一定期間記録されます。</div><p id="err" class="error" hidden></p>`)}`;status('未接続',false);applyGameFilters()}
+const FAVORITES_STORAGE_KEY='nk_favorite_games_v1';
+function favoriteGames(){
+ try{
+  const values=JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY)||'[]');
+  return Array.isArray(values)?[...new Set(values.filter(k=>typeof k==='string'&&GAMES[k]))]:[]
+ }catch(_){return []}
+}
+function favoriteButton(k){
+ const marked=favoriteGames().includes(k);
+ return '<button type="button" data-favorite-game="'+esc(k)+'" class="nk-favorite-btn '+
+  (marked?'is-favorite':'')+'" aria-pressed="'+marked+
+  '" onclick="toggleFavorite(\''+k+'\')">'+
+  (marked?'♥ お気に入り済み':'♡ お気に入りに登録')+'</button>'
+}
+function favoritePeople(k){
+ const liked=(room?.players||[]).filter(p=>Array.isArray(p.favorites)&&p.favorites.includes(k));
+ if(!liked.length)return '<small class="nk-favorite-people is-empty">♡ まだ登録者はいません</small>';
+ return '<small class="nk-favorite-people">♥ '+liked.length+'人：'+
+  liked.map(p=>esc(p.name)).join('・')+'</small>'
+}
+function toggleFavorite(k){
+ if(!GAMES[k])return;
+ const list=favoriteGames(),index=list.indexOf(k);
+ if(index===-1)list.push(k);else list.splice(index,1);
+ try{localStorage.setItem(FAVORITES_STORAGE_KEY,JSON.stringify(list))}catch(_){}
+ document.querySelectorAll('[data-favorite-game="'+k+'"]').forEach(btn=>{
+  const marked=list.includes(k);
+  btn.classList.toggle('is-favorite',marked);
+  btn.setAttribute('aria-pressed',String(marked));
+  btn.textContent=marked?'♥ お気に入り済み':'♡ お気に入りに登録'
+ });
+ if(room&&ws&&ws.readyState===WebSocket.OPEN)send({type:'favorites',games:list})
+}
+function landing(){let code=new URLSearchParams(location.search).get('room')||'';app.innerHTML=`<section class="hero"><div class="kicker">REALTIME / みんなで参加</div><h1>予想が当たると、<br>もっと仲良くなる。</h1><p class="lead">各自が秘密の正解を決め、順番に主役になろう。ほかの全員がその人の答えを予想して、まとめて答え合わせ！</p></section><div class="nk-landing-modes"><a class="nk-mode-card" href="/studio"><strong>✏️ ひとりで作る・出題する</strong><small>自作ゲーム、友達に出すリンク、プロフィール、保存データ</small></a><a class="nk-mode-card" href="#join-lobby" onclick="document.getElementById('nickname')?.focus()"><strong>👥 みんなで遊ぶ</strong><small>ルームを作って、友達とリアルタイム参加</small></a></div><div class="nk-my-profile">${NKM.avatarHTML(NKM.profile(),38)} <b>${esc(NKM.profile().name||'ゲスト')}</b> <a href="/studio">アイコン・名前を設定</a></div><div class="nk-landing-modes"><a class="nk-mode-card" href="/profile-maker"><strong>🌈 自由なプロフィールを作る</strong><small>色・画像・カード・項目・レイアウトを自分好みに編集して友達に共有！</small></a><a class="nk-mode-card" href="/echa"><strong>🎨 みんなの絵チャ</strong><small>広い共同キャンバスに同時お絵描き。全体PNG・タイムラプス動画保存も！</small></a></div>${recentGameSection()}${recentEchaLink()}<div data-master-game="millishira" class="nk-landing-modes"><a class="nk-mode-card" href="/milli"><strong>🖼️ キャラクター・ミリしら</strong><small>キャラ画像と自由な質問で、友達に設定を想像してもらおう</small></a></div>${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).map(([k,d])=>`<div class="game-option" data-game-key="${k}" data-master-game="${k}"><div class="card"><span>${d.icon}</span><strong>${d.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${d.desc}</small></div><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 ルールを見る</button>${favoriteButton(k)}</div>`).join('')}</div>${panel('START / ルーム参加','友達といっしょに遊ぼう',`<label id="join-lobby" class="labeled">あなたのニックネーム</label><input id="nickname" class="field" maxlength="24" placeholder="例：おかゆ" value="${esc(sessionStorage.getItem('nakami_name')||NKM.profile().name||'')}"><label class="labeled">ルームコード（友達の部屋に入る場合）</label><input id="roomcode" class="field" maxlength="6" value="${esc(code.toUpperCase())}" placeholder="例：AB12CD" autocapitalize="characters"><div class="btns">${action('新しい部屋を作る','connectNow("create")')}${action('ルームに参加する','connectNow("join")','alt')}</div><div class="notice">2人以上で遊べます。公開後はURLを送るだけで各自のスマホから参加可能。公開前は同じPCやLAN上で動作確認できます。参加中の操作・ゲーム結果はルーム管理者とは別のサイト管理者が履歴として確認でき、ニックネーム・時刻・得点などが一定期間記録されます。</div><p id="err" class="error" hidden></p>`)}`;status('未接続',false);applyGameFilters()}
 function error(msg){let e=document.getElementById('err');if(e){e.hidden=false;e.textContent=msg}else{let target=document.querySelector('.body');if(target)target.insertAdjacentHTML('afterbegin',`<p class="error">${esc(msg)}</p>`);else alert(msg)}}
 function connectNow(kind){replacedByAnotherTab=false;playerName=document.getElementById('nickname').value.trim().slice(0,24);if(!playerName)return error('ニックネームを入力してください');let code=document.getElementById('roomcode').value.trim().toUpperCase();if(kind==='join'&&!/^[A-Z2-9]{6}$/.test(code))return error('6桁のルームコードを入力してください');sessionStorage.setItem('nakami_name',playerName);const pr=NKM.profile();if(pr.name!==playerName)NKM.saveProfile({...pr,name:playerName});connectCode=kind==='join'?code:'';pendingAction=kind;retryAttempt=0;clearTimeout(retryTimer);openSocket()}
 function multiplayerRoomLost(message){
@@ -169,7 +202,8 @@ function openSocket(){
   const type=room||connectCode?'join':'create';
   const code=room?.code||connectCode;
   socket.send(JSON.stringify({type,code,name:playerName,
-   sid:getSid(code||'creating'),avatar:NKM.profile().avatar,emoji:NKM.profile().emoji}))
+   sid:getSid(code||'creating'),avatar:NKM.profile().avatar,emoji:NKM.profile().emoji,
+   favorites:favoriteGames()}))
  };
  socket.onmessage=evt=>{
  if(socket!==ws)return;
@@ -315,7 +349,7 @@ if(WORD_GAMES.includes(room.game)&&phase!=='lobby'){renderWord();return}
 if(MORE_GAMES.includes(room.game)&&phase!=='lobby'){renderMore();return}
 if(PARTY_GAMES.includes(room.game)&&phase!=='lobby'){renderParty();return}
 if(phase==='lobby'){
-  const choices=`${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).filter(([k])=>!room.publicGames||room.publicGames.includes(k)).map(([k,g])=>`<div class="game-option" data-game-key="${k}"><button class="card ${room.game===k?'on':''}" ${owner?'':'disabled'} onclick="chooseGame('${k}')"><span>${g.icon}</span><strong>${g.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${g.desc}</small></button><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 遊び方を見る</button></div>`).join('')}</div>`;
+  const choices=`${gameFilterBar()}<div class="cards" data-games-grid>${Object.entries(GAMES).filter(([k])=>!room.publicGames||room.publicGames.includes(k)).map(([k,g])=>`<div class="game-option" data-game-key="${k}"><button class="card ${room.game===k?'on':''}" ${owner?'':'disabled'} onclick="chooseGame('${k}')"><span>${g.icon}</span><strong>${g.title}</strong><small class="nk-players">${playerRange(k)}</small><small>${g.desc}</small></button><button type="button" class="rules-quick" onclick="openRules('${k}')">📖 遊び方を見る</button>${favoriteButton(k)}${favoritePeople(k)}</div>`).join('')}</div>`;
   const modes=`<h3>お題の配布方法</h3><div class="modegrid"><button class="mode ${room.tierMode==='self'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('self')"><strong>✍️ 自分で作って、自分で答える</strong><small>参加者全員が自由にお題と5つの選択肢を考え、自分の作ったTier表に答える</small></button><button class="mode ${room.tierMode==='shuffle'?'on':''}" ${owner?'':'disabled'} onclick="setTierMode('shuffle')"><strong>🎲 みんなのお題をシャッフル</strong><small>全員が作ったお題を、必ず作成者以外の誰かにランダムで1つずつ配る</small></button></div><div class="notice">全員が各自のお題を作成するか、例題からランダム読み込みできます。${room.game==='tier'?'Tier表を1題':'5問のクイズセット'}を作成します。</div>`;
   const buttons=owner?`<div class="btns">${action('ゲーム開始 →','startGame()')}</div>`:`<div class="info">ルーム作成者がゲームを選んで開始するまでお待ちください。</div>`;
   app.innerHTML=panel('WAITING ROOM / ゲーム待機中','みんなが集まったらスタート',top+`<div class="kicker">参加メンバー (${room.players.length}人)</div><div class="playergrid">${players()}</div><h3>遊ぶゲーム</h3>${studioLobbyPanel()}${room.customMeta?`<div class="notice">現在は自作問題セットが選択されています。通常のゲームに戻す場合は下から別のゲームを選んでください。</div>`:''}${choices}${room.customMeta?'':WORD_GAMES.includes(room.game)?wordLobbyPanel():DRAW_GAMES.includes(room.game)?`<div class="info">🎨 ${esc(GAMES[room.game].desc)}<br>3人以上で、スマホやPCから絵を描けます。</div>`:(BOARD_PLUS_GAMES.includes(room.game)||BOARD_GAMES.includes(room.game)||PARTY_GAMES.includes(room.game)||MORE_GAMES.includes(room.game)||DRAW_GAMES.includes(room.game)||WORD_GAMES.includes(room.game)||ART_EXTRA_GAMES.includes(room.game)||DRAW_MIX_GAMES.includes(room.game)||EPISODE_GAMES.includes(room.game))?`<div class="info">✨ ${esc(GAMES[room.game].desc)}<br>各自のスマホから参加できます。通話しながら遊ぶのがおすすめです。</div>`:modes}${buttons}<p id="err" class="error" hidden></p>`);applyGameFilters();return;
