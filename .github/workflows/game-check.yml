@@ -93,6 +93,10 @@ jobs:
         run: python live/test_echa.py
       - name: Test smaller new art rooms, undo horizon and legacy artwork
         run: python live/test_echa_smaller_undo.py
+      - name: Test safe owner-driven resize of an existing artwork
+        run: python live/test_echa_resize_existing.py
+      - name: Test canvas resize preservation in every client
+        run: node live/test_echa_resize_existing.js
       - name: Test per-room canvas dimensions and fast layer-specific undo
         run: node live/test_echa_small_canvas_undo.js
       - name: Test reused art room after 60 historical participants
