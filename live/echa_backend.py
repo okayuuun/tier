@@ -521,8 +521,9 @@ async def route_ws(request):
                         room['version']+=1
                         await notify(room,{'type':'remove','id':removed['id'],
                                            'version':room['version']})
-                    else:
-                        raise ValueError('戻せるのは直近12手までです。古い線は作品として残ります')
+                    # No own mark among the newest 12? Do nothing as before.
+                    # This also keeps older clients from treating undo as a
+                    # fatal draw error or losing their pending paint preview.
                 elif action=='clear':
                     if not member['owner']:
                         raise ValueError('全消去できるのは部屋の作成者だけです')
