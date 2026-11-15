@@ -58,8 +58,9 @@ async def main():
             assert len(room['strokes'])==3
             assert {s['id'] for s in room['strokes']}==original_ids
             await ws.send_json({'type':'undo'})
-            blocked=await receive(ws,'error')
-            assert '直近12手' in blocked['message']
+            await ws.send_json({'type':'sync'})
+            remaining=await receive(ws,'sync')
+            assert len(remaining['strokes'])==3
             assert len(room['strokes'])==3
             saved=deserialize_room('art',serialize_room('art',room))
             assert saved['width']==1920 and saved['height']==1280
