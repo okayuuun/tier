@@ -106,11 +106,11 @@
     <canvas id="ec-timeline-canvas" width="960" height="640"></canvas>
     <input type="range" min="0" max="0" value="0" id="ec-timeline-range" aria-label="タイムラプスの進行">
     <div class="ec-row"><button id="ec-timeline-play">▶ 再生</button><label>速度 <select id="ec-timeline-speed"><option value="0.5">0.5倍</option><option selected value="1">1倍</option><option value="2">2倍</option><option value="4">4倍</option></select></label><span id="ec-timeline-progress">0 / 0本</span>
-    <button id="ec-record" class="ec-primary">🎥 動画を保存（WebM）</button></div>
-    <p class="ec-small">動画保存は対応ブラウザでのみ使用できます。再生は最大約60秒になるよう早送りされます。</p>
+    <button id="ec-record" class="ec-primary">🎥 動画を保存（MP4優先）</button></div>
+    <p class="ec-small">MP4対応ブラウザではMP4で保存します。非対応の場合はWebMで保存されます。画像は上の「全体PNG保存」で保存できます。タイムラプスは最長約60秒です。</p>
   </div>
 </div>
 </main>
-<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=16" defer></script>
+<script src="/art_selection_guard.js?v=2" defer></script><script src="/echa_fill.js?v=1" defer></script><script src="/echa.js?v=17" defer></script>
 </body>
 </html>
