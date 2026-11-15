@@ -53,17 +53,17 @@ async def run():
             await ws.send_json({'type':'resize'})
             result=await got(ws,'resize')
             await got(guest,'resize')
-            assert result['width']==1920 and result['height']==1280
-            assert round(result['widthFactor'],4)==.625
-            assert room['width']==1920 and room['height']==1280
+            assert result['width']==2048 and result['height']==1365
+            assert round(result['widthFactor'],4)==.6667
+            assert room['width']==2048 and room['height']==1365
             assert len(room['layers'])==6 and room['maxLayers']==6
             assert [s['id'] for s in room['strokes']]==['old1','old2']
             assert room['strokes'][0]['points']==[[.1,.2],[.9,.8]]
             assert room['strokes'][1]['points']==[[.3,.4],[.6,.7]]
             assert room['strokes'][0]['width']==5
-            assert room['strokes'][1]['width']==19
+            assert room['strokes'][1]['width']==20
             snapshot=deserialize_room('art',serialize_room('art',room))
-            assert snapshot['width']==1920 and snapshot['maxLayers']==6
+            assert snapshot['width']==2048 and snapshot['maxLayers']==6
             assert len(snapshot['strokes'])==2 and len(snapshot['layers'])==6
             await ws.send_json({'type':'resize'})
             error=await asyncio.wait_for(ws.receive_json(),5)
