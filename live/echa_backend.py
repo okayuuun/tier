@@ -508,6 +508,37 @@ async def route_ws(request):
                         payload['drawing']=list(room['drawing'].values())
                     await notify(room,payload)
                     audit_art(request, room, name, "echa_layer", str(data.get("op",""))[:16])
+                elif action=='resize':
+                    if not member['owner']:
+                        raise ValueError('キャンバスを縮小できるのは部屋の作成者だけです')
+                    if room['drawing']:
+                        raise ValueError('全員が描き終えてからサイズを変更してください')
+                    old_width=room.get('width', WIDTH)
+                    old_height=room.get('height', HEIGHT)
+                    if (old_width,old_height)==(NEW_WIDTH,NEW_HEIGHT):
+                        raise ValueError('この部屋はすでに軽量サイズです')
+                    if old_width<NEW_WIDTH or old_height<NEW_HEIGHT:
+                        raise ValueError('このキャンバスをこれ以上縮小できません')
+                    ratio=NEW_WIDTH/old_width
+                    # Paths and bucket coordinates are normalized 0..1,
+                    # so none are cropped. Scale pen/eraser thickness to
+                    # preserve the drawing's proportions at the new size.
+                    for stroke in room['strokes']:
+                        if stroke.get('tool')!='fill' and 'width' in stroke:
+                            stroke['width']=max(1,min(90,
+                                int(round(float(stroke['width'])*ratio))))
+                    room['width']=NEW_WIDTH
+                    room['height']=NEW_HEIGHT
+                    # Preserve every existing layer, including an older room
+                    # with more than four, but prevent further additions.
+                    room['maxLayers']=max(NEW_MAX_LAYERS,len(room['layers']))
+                    room['version']+=1
+                    await notify(room,{'type':'resize',
+                                      'width':NEW_WIDTH,'height':NEW_HEIGHT,
+                                      'maxLayers':room['maxLayers'],
+                                      'widthFactor':ratio,
+                                      'version':room['version']})
+                    audit_art(request,room,name,'echa_layer','resize')
                 elif action=='undo':
                     # Recent-history cap avoids rescanning unlimited old marks.
                     # Old ink is NOT deleted merely because its undo slot expires.
