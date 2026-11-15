@@ -385,7 +385,7 @@ function onMessage(d){
   try{localStorage.setItem('nk_echa_recent_room',code);localStorage.setItem('nk_echa_recent_at',String(Date.now()))}catch(_){}
   $('ec-join').hidden=true;$('ec-room').hidden=false;
   $('ec-room-code').textContent=code;$('ec-clear').hidden=!owner;
-  $('ec-resize').hidden=!owner||Number(d.width||3072)<=1920;
+  $('ec-resize').hidden=!owner||Number(d.width||3072)<=2048;
   history.replaceState(null,'',location.pathname+'?room='+code);
   if(unsafeBlank){
    $('ec-save-cloud').disabled=true;
@@ -440,7 +440,7 @@ function onMessage(d){
   maxLayers=Number(d.maxLayers)||maxLayers;
   $('ec-resize').hidden=true;
   renderLayers();redraw();fit();
-  alertUI('✅ キャンバスを1920×1280に縮小しました。線・レイヤーは残っています。');
+  alertUI('✅ キャンバスを2048×1365に縮小しました。線・レイヤーは残っています。');
   return
  }
  if(d.type==='remove'){
@@ -947,9 +947,9 @@ overlay.addEventListener('pointercancel',finishStroke);
 overlay.addEventListener('contextmenu',ev=>ev.preventDefault());
 $('ec-undo').addEventListener('click',()=>send({type:'undo'}));
 $('ec-resize').addEventListener('click',()=>{
- if(!owner||!connected()||WIDTH<=1920)return;
+ if(!owner||!connected()||WIDTH<=2048)return;
  if(!confirm('先に「全体をPNG保存」で現在の高画質作品を保存しましたか？\n縮小すると元の解像度へは戻せません。線の位置は維持され、既存レイヤーも削除されません。'))return;
- if(!confirm('最後の確認：この部屋を1920×1280へ縮小しますか？参加中の全員の画面に反映されます。'))return;
+ if(!confirm('最後の確認：この部屋を2048×1365へ縮小しますか？参加中の全員の画面に反映されます。'))return;
  send({type:'resize'})
 });
 $('ec-clear').addEventListener('click',()=>{if(confirm('全員が描いた作品を本当に消去しますか？タイムラプスの線も消えます。'))send({type:'clear'})});
