@@ -123,12 +123,24 @@ def code():
             return c
 
 
+def sanitize_favorite_games(value):
+    """Only published game IDs from the built-in catalog can be shared."""
+    if not isinstance(value, list):
+        return []
+    result=[]
+    for game in value[:80]:
+        if isinstance(game,str) and game in CONFIGS and game not in result:
+            result.append(game)
+    return result
+
+
 def public_player(p, room):
     pid = p["id"]
     return {"id": pid, "name": p["name"], "online": bool(p["ws"] and not p["ws"].closed),
             "answered": pid in room["answers"], "guessed": pid in room["guesses"],
             "topicSubmitted": pid in room["topics"], "avatar": p.get("avatar", ""), "emoji": p.get("emoji", "🌷"),
-            "score": room["points"].get(pid, 0)}
+            "score": room["points"].get(pid, 0),
+            "favorites": p.get("favorites", [])}
 
 
 def active_target(room):
@@ -387,9 +399,13 @@ async def handle_event(ws, context, obj):
         avatar = str(obj.get("avatar", ""))[:30032]
         avatar = avatar if re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/=]{1,30000}", avatar) else ""
         emoji = str(obj.get("emoji", "🌷"))[:5]
+        incoming_favorites = (sanitize_favorite_games(obj["favorites"])
+                              if "favorites" in obj else None)
         if returning:
             returning["avatar"] = avatar or returning.get("avatar", "")
             returning["emoji"] = emoji
+            if incoming_favorites is not None:
+                returning["favorites"] = incoming_favorites
             if returning["ws"] and not returning["ws"].closed and returning["ws"] is not ws:
                 await returning["ws"].close(code=1000, message=b"replaced by reconnection")
             returning["ws"] = ws
@@ -401,7 +417,8 @@ async def handle_event(ws, context, obj):
             if len(room["players"]) >= MAX_PLAYERS:
                 raise ValueError("このルームは満員です")
             pid = secrets.token_urlsafe(10)
-            room["players"][pid] = {"id": pid, "sid": sid, "name": name, "ws": ws, "avatar": avatar, "emoji": emoji}
+            room["players"][pid] = {"id": pid, "sid": sid, "name": name, "ws": ws, "avatar": avatar, "emoji": emoji,
+                                    "favorites": incoming_favorites or []}
             room["points"][pid] = 0
             if not room["owner"]:
                 room["owner"] = pid
@@ -416,6 +433,12 @@ async def handle_event(ws, context, obj):
         raise ValueError("先にルームに参加してください")
     phase = room["phase"]
     is_owner = room["owner"] == pid
+    if t == "favorites":
+        # Each player controls only their own preferences, in any phase.
+        # Updates are instantly visible to everyone in the same room.
+        room["players"][pid]["favorites"] = sanitize_favorite_games(obj.get("games"))
+        await broadcast(room)
+        return
     if t == "word_deck":
         if not is_owner or room["phase"] != "lobby" or room["game"] not in WORD_IDS:
             raise ValueError("カードの登録は待機中に主催者だけができます")
