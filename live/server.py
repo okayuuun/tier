@@ -399,11 +399,18 @@ async def handle_event(ws, context, obj):
         avatar = str(obj.get("avatar", ""))[:30032]
         avatar = avatar if re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/=]{1,30000}", avatar) else ""
         emoji = str(obj.get("emoji", "🌷"))[:5]
+        # A browser-local random ID identifies return visits in the private
+        # admin list. It is NOT authentication and is never sent to players.
+        supplied_id = obj.get("profileId")
+        profile_id = supplied_id if isinstance(supplied_id,str) and re.fullmatch(
+            r"[a-f0-9]{32}", supplied_id) else None
         incoming_favorites = (sanitize_favorite_games(obj["favorites"])
                               if "favorites" in obj else None)
         if returning:
             returning["avatar"] = avatar or returning.get("avatar", "")
             returning["emoji"] = emoji
+            if profile_id:
+                returning["profileId"] = profile_id
             if incoming_favorites is not None:
                 returning["favorites"] = incoming_favorites
             if returning["ws"] and not returning["ws"].closed and returning["ws"] is not ws:
@@ -418,7 +425,7 @@ async def handle_event(ws, context, obj):
                 raise ValueError("このルームは満員です")
             pid = secrets.token_urlsafe(10)
             room["players"][pid] = {"id": pid, "sid": sid, "name": name, "ws": ws, "avatar": avatar, "emoji": emoji,
-                                    "favorites": incoming_favorites or []}
+                                    "favorites": incoming_favorites or [], "profileId": profile_id}
             room["points"][pid] = 0
             if not room["owner"]:
                 room["owner"] = pid
@@ -797,6 +804,10 @@ async def websocket(request):
                         detail = "設定ゲーム：" + str(obj.get("game", ""))[:30] if event == "configure" else ""
                         try:
                             MASTER.log_action(after_room, name, event, detail)
+                            if event in ("create", "join", "favorites") and actor_id:
+                                participant = after_room["players"].get(actor_id)
+                                if participant:
+                                    MASTER.observe_player(after_room, participant)
                             if old_phase != after_room.get("phase") and after_room.get("phase") in ("reveal", "studio_reveal", "ito_review", "akaiito_reveal", "unique_reveal", "wolf_reveal", "prop_reveal", "soup_reveal", "un_reveal", "in_reveal", "sr_reveal", "desc_reveal", "draw_reveal", "mail_reveal", "ep_reveal", "word_reveal", "art_reveal", "relay_reveal", "mx_reveal","co_reveal","rv_reveal","inv_reveal","char_reveal","px_reveal", "db_reveal", "final"):
                                 MASTER.save_match(after_room)
                         except Exception:

@@ -131,6 +131,25 @@ function forgetRecentRoom(code){
  landing();
 }
 const FAVORITES_STORAGE_KEY='nk_favorite_games_v1';
+// Random browser profile identifier, NOT a login credential or room token.
+// Sent only when joining a game so the administrator can distinguish
+// nickname collisions without seeing IPs or session/resume secrets.
+const FAVORITE_PROFILE_KEY='nk_favorite_profile_id_v1';
+let temporaryFavoriteProfileId='';
+function favoriteProfileId(){
+ if(temporaryFavoriteProfileId)return temporaryFavoriteProfileId;
+ try{
+  const existing=localStorage.getItem(FAVORITE_PROFILE_KEY);
+  if(/^[a-f0-9]{32}$/.test(existing||''))return existing;
+  const created=iid().slice(0,32);
+  localStorage.setItem(FAVORITE_PROFILE_KEY,created);
+  return created
+ }catch(_){
+  temporaryFavoriteProfileId=iid().slice(0,32);
+  return temporaryFavoriteProfileId
+ }
+}
+
 function favoriteGames(){
  try{
   const values=JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY)||'[]');
@@ -203,7 +222,7 @@ function openSocket(){
   const code=room?.code||connectCode;
   socket.send(JSON.stringify({type,code,name:playerName,
    sid:getSid(code||'creating'),avatar:NKM.profile().avatar,emoji:NKM.profile().emoji,
-   favorites:favoriteGames()}))
+   favorites:favoriteGames(),profileId:favoriteProfileId()}))
  };
  socket.onmessage=evt=>{
  if(socket!==ws)return;
