@@ -27,7 +27,7 @@ function show(game,phase,p){
  assert(app.innerHTML.length>200,game+' '+phase+' too little content');
  // Browsers stop a double-quoted attribute at its first unescaped quote.
  // Compile every actual inline command after HTML entity decoding.
- for(const match of app.innerHTML.matchAll(/\\bonclick="([^"]*)"/g)){
+ for(const match of app.innerHTML.matchAll(/\bonclick="([^"]*)"/g)){
   const code=unescapeAttr(match[1]);
   assert.doesNotThrow(()=>new Function(code),
    game+' '+phase+' invalid onclick command: '+code);
