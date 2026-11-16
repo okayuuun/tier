@@ -25,12 +25,17 @@ async def main():
         sid1='browser_session_first_player_1234'
         sid2='browser_session_second_player_5678'
         await first.send_json({'type':'create','name':'主催者','sid':sid1,
+                               'profileId':'f1'*16,
                                'favorites':['tier','wolf','not-a-real-game','tier']})
         a=await state(first)
         code=a['room']['code']
         original_id=a['me']
         assert a['room']['owner']==original_id
         assert a['room']['players'][0]['favorites']==['tier','wolf']
+        assert 'profileId' not in str(a), 'Stable tracking IDs must never be broadcast'
+        assert server.MASTER.db.execute(
+            "SELECT favorites FROM favorite_users WHERE profile_id=?",
+            ('browser:'+'f1'*16,)).fetchone() is not None
         second=await client.ws_connect('/ws')
         await second.send_json({'type':'join','code':code,'name':'友達','sid':sid2,
                                 'favorites':['wolf','quiz']})
