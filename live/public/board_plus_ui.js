@@ -202,7 +202,10 @@ function bpAiue(){
    if(me===p.turn){
     html+='<p class="bp-help">他の人の言葉にありそうな1文字を選んで攻撃！誰かの文字に当たれば連続で攻撃できます。</p>'+
     '<div class="bp-kana-grid">'+[...BP_KANA].map(k=>
-     '<button '+(p.called.includes(k)?'disabled':'onclick="bpAiAttack('+JSON.stringify(k)+')"')+
+     // Use HTML-escaped quotes inside the quoted onclick attribute.
+     // A raw JSON.stringify(k) produced onclick="bpAiAttack("あ")" and
+     // broke every clickable kana button before any event was sent.
+     '<button type="button" '+(p.called.includes(k)?'disabled':'onclick="bpAiAttack('+JSON.stringify(k).replaceAll('"','&quot;')+')"')+
       '>'+bpE(k)+'</button>').join('')+'</div>';
    }else html+='<div class="bp-wait">ほかのプレイヤーの攻撃を待っています。</div>';
   }else{
