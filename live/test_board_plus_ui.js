@@ -4,13 +4,20 @@ const src=fs.readFileSync(__dirname+'/public/board_plus_ui.js','utf8');
 const games={royalletter:'密書の駆け引き',cipherrelay:'ひみつの暗号便',skyfire:'みんなの花火',
  scoutline:'スカウト・ライン',aiuebattle:'ひらがな文字バトル'};
 const players=Array.from({length:4},(_,i)=>({id:'p'+i,name:'参加者'+i,score:0,emoji:'🌷'}));
-const app={innerHTML:''};
+const app={innerHTML:''},sent=[];
+const htmlEscape=s=>String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+ .replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const unescapeAttr=s=>s.replace(/&quot;/g,'"').replace(/&#39;/g,"'")
+ .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+const inputs={'bp-secret':{value:'かさ'},'bp-theme':{value:'どうぶつ'}};
 const context={app,me:'p0',GAMES:Object.fromEntries(Object.entries(games).map(([id,title])=>[id,{title,desc:'テスト'}])),
  room:null,console,Math,JSON,Set,
  panel:(a,b,c)=>a+b+c,roomBar:()=>'ROOM BAR',
- action:(name,fn)=>'<button>'+name+'</button>',
- esc:s=>String(s??''),send(){},error(){},
- document:{getElementById(){return {value:'1'}}}};
+ // Render real onclick attributes. The old mock discarded fn entirely
+ // and missed syntactically broken buttons in production.
+ action:(name,fn)=>'<button type="button" onclick="'+htmlEscape(fn)+'">'+name+'</button>',
+ esc:s=>String(s??''),send(obj){sent.push(obj)},error(msg){throw Error(msg)},
+ document:{getElementById(id){return inputs[id]||{value:'1'}}}};
 vm.createContext(context);vm.runInContext(src,context);
 function show(game,phase,p){
  context.room={game,phase,boardplus:p,players,owner:'p0',active:players.map(x=>x.id)};
@@ -18,6 +25,13 @@ function show(game,phase,p){
  assert(app.innerHTML.includes(games[game]),game+' title missing');
  assert(app.innerHTML.includes('ROOM BAR'),game+' room header missing');
  assert(app.innerHTML.length>200,game+' '+phase+' too little content');
+ // Browsers stop a double-quoted attribute at its first unescaped quote.
+ // Compile every actual inline command after HTML entity decoding.
+ for(const match of app.innerHTML.matchAll(/\bonclick="([^"]*)"/g)){
+  const code=unescapeAttr(match[1]);
+  assert.doesNotThrow(()=>new Function(code),
+   game+' '+phase+' invalid onclick command: '+code);
+ }
 }
 const base={round:0,roundLimit:3,history:[],last:null};
 show('royalletter','bp_royal',{...base,turn:'p0',hand:2,drawn:5,deckCount:10,gone:[],safe:[],discards:[]});
@@ -44,10 +58,22 @@ const ai={...base,theme:'食べもの',turn:'p0',mine:'かさ',submitted:['p0','
  p3:{letters:[null,'か',null]}
 }};
 show('aiuebattle','bp_ai_write',{...ai,submitted:[],boards:{}});
+vm.runInContext('bpAiTheme()',context);
+assert.equal(sent.at(-1).type,'ai_theme');
+assert.equal(sent.at(-1).theme,'どうぶつ');
+vm.runInContext('bpAiWrite()',context);
+assert.equal(sent.at(-1).type,'ai_write');
+assert.equal(sent.at(-1).word,'かさ');
 show('aiuebattle','bp_ai_attack',ai);
+// Execute the first rendered kana key exactly as a browser onclick would.
+const firstKey=app.innerHTML.match(/onclick="([^"]*bpAiAttack[^"]*)"/);
+assert(firstKey,'Kana buttons must contain executable attack handlers');
+vm.runInContext(unescapeAttr(firstKey[1]),context);
+assert.equal(sent.at(-1).type,'ai_attack');
+assert.equal(sent.at(-1).letter,'あ');
 show('aiuebattle','bp_ai_reveal',{...ai,last:{winnerName:'参加者1',words:{p0:'かさ',p1:'さかな',p2:'ねこ',p3:'みかん'}}});
 for(const game of Object.keys(games)){
  show(game,'final',{...base,round:3,roundLimit:3,history:[],last:null,teamScores:{red:2,blue:1},
   progress,stars:{p0:1}});
 }
-console.log('PASS: five additional card/word game UI modes, reveal states and final pages');
+console.log('PASS: five card/word games render valid clickable buttons; AIUE actions actually send requests');

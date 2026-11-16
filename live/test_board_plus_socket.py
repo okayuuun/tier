@@ -57,7 +57,48 @@ async def main():
         states=[await read_state(w,'bp_fire') for w in ws]
         assert states[1]['room']['boardplus']['hands'][ids[1]][0]['c']==color
         assert states[1]['room']['boardplus']['turn']==ids[1]
+        # Exercise the remaining card games through actual websocket
+        # events as well, so the server-side actions never silently fail.
+        await ws[0].send_json({'type':'end'})
+        for w in ws:await read_state(w,'final')
+        await ws[0].send_json({'type':'restart'})
+        for w in ws:await read_state(w,'lobby')
+
+        await ws[0].send_json({'type':'configure','game':'scoutline'})
+        await ws[0].send_json({'type':'start'})
+        states=[await read_state(w,'bp_scout') for w in ws]
+        assert states[0]['room']['boardplus']['turn']==ids[0]
+        await ws[0].send_json({'type':'sc_skip'})
+        states=[await read_state(w,'bp_scout') for w in ws]
+        assert states[1]['room']['boardplus']['turn']==ids[1]
+        await ws[0].send_json({'type':'end'})
+        for w in ws:await read_state(w,'final')
+        await ws[0].send_json({'type':'restart'})
+        for w in ws:await read_state(w,'lobby')
+
+        await ws[0].send_json({'type':'configure','game':'royalletter'})
+        await ws[0].send_json({'type':'start'})
+        states=[await read_state(w,'bp_royal') for w in ws]
+        p=states[0]['room']['boardplus']
+        card=p['drawn'] if p['drawn']!=8 else p['hand']
+        await ws[0].send_json({'type':'rl_play','card':card,'target':None,'guess':1})
+        states=[await read_state(w,'bp_royal') for w in ws]
+        assert states[1]['room']['boardplus']['discards']
+        await ws[0].send_json({'type':'end'})
+        for w in ws:await read_state(w,'final')
+        await ws[0].send_json({'type':'restart'})
+        for w in ws:await read_state(w,'lobby')
+
+        await ws[0].send_json({'type':'configure','game':'cipherrelay'})
+        await ws[0].send_json({'type':'start'})
+        states=[await read_state(w,'bp_cipher_clue') for w in ws]
+        giver=states[0]['room']['boardplus']['clueGiver']
+        idx=ids.index(giver)
+        await ws[idx].send_json({'type':'dc_clue','words':['りんご','みず','かさ']})
+        states=[await read_state(w,'bp_cipher_guess') for w in ws]
+        assert states[0]['room']['boardplus']['clues']==['りんご','みず','かさ']
+
         for w in ws:await w.close()
-    print('PASS: four real clients, aiue attacks and secrecy, Hanabi-style hidden hand and hints')
+    print('PASS: four real clients, five games, AIUE attacks, secret cards and card/word actions')
 
 asyncio.run(main())
