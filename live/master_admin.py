@@ -21,6 +21,8 @@ from room_store import store as ROOM_STORE
 MAX_LOGS = 5000
 LOG_DAYS = 30
 HISTORY_DAYS = 90
+FAVORITE_USER_DAYS = 90  # A limited record, not permanent device tracking.
+MAX_FAVORITE_USERS = 3000
 LOGGER = logging.getLogger('nakami.master')
 GAMES = ("tier", "value", "either", "quiz", "ito", "akaito", "propose", "soup", "unique", "wolf", "unanimous", "insider", "secret_rank", "describe", "drawfake", "mysterymail", "senryu", "tanka", "booktitle", "artguide", "drawrelay", "artcontest", "artforbid", "drawbluff", "artmix", "artcollab", "reverseart", "invent", "chardesign", "episode", "millishira", "oneword", "spectrum", "quiet", "bluff", "wordagents", "royalletter", "cipherrelay", "skyfire", "scoutline", "aiuebattle")
 LABELS = {
@@ -124,6 +126,14 @@ class MasterAdmin:
         self.db.execute("CREATE TABLE IF NOT EXISTS published (game TEXT PRIMARY KEY, enabled INTEGER NOT NULL)")
         self.db.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, room TEXT, game TEXT, player TEXT, action TEXT NOT NULL, detail TEXT)")
         self.db.execute("CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, stamp TEXT UNIQUE NOT NULL, ts REAL NOT NULL, room TEXT, game TEXT, players TEXT, results TEXT, ended_early INTEGER)")
+        # Only voluntary room participants are recorded. Never keep IPs,
+        # WebSocket session keys, avatar data or browser fingerprints.
+        self.db.execute("""CREATE TABLE IF NOT EXISTS favorite_users (
+            profile_id TEXT PRIMARY KEY,
+            first_seen REAL NOT NULL, last_seen REAL NOT NULL,
+            name TEXT NOT NULL, room TEXT NOT NULL, favorites TEXT NOT NULL
+        )""")
+        self.db.execute("CREATE INDEX IF NOT EXISTS favorite_users_seen ON favorite_users(last_seen DESC)")
         self.db.execute("CREATE INDEX IF NOT EXISTS audit_when ON audit(ts DESC)")
         self.db.execute("CREATE INDEX IF NOT EXISTS history_when ON history(ts DESC)")
         self.db.executemany("INSERT OR IGNORE INTO published(game,enabled) VALUES (?,1)", [(g,) for g in GAMES])
@@ -155,6 +165,11 @@ class MasterAdmin:
         self.db.execute("DELETE FROM audit WHERE ts < ?", (now - LOG_DAYS * 86400,))
         self.db.execute("DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT ?)", (MAX_LOGS,))
         self.db.execute("DELETE FROM history WHERE ts < ?", (now - HISTORY_DAYS * 86400,))
+        self.db.execute("DELETE FROM favorite_users WHERE last_seen < ?",
+                        (now - FAVORITE_USER_DAYS * 86400,))
+        self.db.execute("""DELETE FROM favorite_users WHERE profile_id NOT IN (
+            SELECT profile_id FROM favorite_users ORDER BY last_seen DESC LIMIT ?)""",
+                        (MAX_FAVORITE_USERS,))
         self.db.commit()
         self._last_trim = now
 
@@ -174,6 +189,41 @@ class MasterAdmin:
         self._trim()
         self._schedule_cloud(self._write_cloud_audit,
                              (stamp, room_code, game, player, action_name, note))
+
+    def observe_player(self, room, player):
+        """Record a participant's nickname and shared favorites for admin only.
+
+        No account login exists. One random browser-local ID groups visits,
+        and a legacy room/player fallback covers older browsers. This is
+        not a verified human identity, and cannot grant any permissions.
+        """
+        code = str(room.get("code", ""))[:12]
+        pid = str(player.get("id", ""))[:48]
+        if not code or not pid:
+            return
+        opaque = player.get("profileId")
+        if not isinstance(opaque, str) or not re.fullmatch(r"[a-f0-9]{32}", opaque):
+            opaque = "legacy:" + code + ":" + pid
+        else:
+            opaque = "browser:" + opaque
+        name = str(player.get("name", ""))[:24]
+        favorites = player.get("favorites", [])
+        if not isinstance(favorites, list):
+            favorites = []
+        games = [g for g in favorites if isinstance(g, str) and g in GAMES][:60]
+        now = time.time()
+        packed = json.dumps(games, ensure_ascii=False, separators=(",", ":"))
+        self.db.execute("""
+            INSERT INTO favorite_users(profile_id,first_seen,last_seen,name,room,favorites)
+            VALUES (?,?,?,?,?,?)
+            ON CONFLICT(profile_id) DO UPDATE SET
+                last_seen=excluded.last_seen, name=excluded.name,
+                room=excluded.room, favorites=excluded.favorites
+        """, (opaque, now, now, name, code, packed))
+        self.db.commit()
+        self._trim()
+        self._schedule_cloud(self._write_cloud_favorite_user,
+                             (opaque, now, now, name, code, packed))
 
     def save_match(self, room):
         stamp = f"{room.get('code', '')}:{room.get('matchNo', 0)}"
@@ -255,8 +305,18 @@ class MasterAdmin:
                         results TEXT, ended_early INTEGER
                     )
                 """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS nakami_master_favorite_users (
+                        profile_id TEXT PRIMARY KEY,
+                        first_seen DOUBLE PRECISION NOT NULL,
+                        last_seen DOUBLE PRECISION NOT NULL,
+                        name TEXT NOT NULL, room TEXT NOT NULL,
+                        favorites TEXT NOT NULL
+                    )
+                """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS nakami_master_audit_ts ON nakami_master_audit(ts DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS nakami_master_history_ts ON nakami_master_history(ts DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS nakami_master_favorites_seen ON nakami_master_favorite_users(last_seen DESC)")
             self._cloud_ready = True
             await self._trim_cloud(force=True)
         except Exception:
@@ -281,6 +341,13 @@ class MasterAdmin:
                 """, MAX_LOGS)
                 await conn.execute("DELETE FROM nakami_master_history WHERE ts < $1",
                                    now - HISTORY_DAYS * 86400)
+                await conn.execute("DELETE FROM nakami_master_favorite_users WHERE last_seen < $1",
+                                   now - FAVORITE_USER_DAYS * 86400)
+                await conn.execute("""
+                    DELETE FROM nakami_master_favorite_users
+                    WHERE profile_id IN (SELECT profile_id FROM nakami_master_favorite_users
+                        ORDER BY last_seen DESC OFFSET $1)
+                """, MAX_FAVORITE_USERS)
             self._cloud_trimmed = now
         except Exception:
             self._cloud_error = True
@@ -328,6 +395,24 @@ class MasterAdmin:
         except Exception:
             self._cloud_error = True
             LOGGER.exception("Could not persist master match history")
+
+    async def _write_cloud_favorite_user(self, row):
+        try:
+            async with ROOM_STORE.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO nakami_master_favorite_users
+                    (profile_id,first_seen,last_seen,name,room,favorites)
+                    VALUES($1,$2,$3,$4,$5,$6)
+                    ON CONFLICT(profile_id) DO UPDATE SET
+                        last_seen=EXCLUDED.last_seen,
+                        name=EXCLUDED.name,
+                        room=EXCLUDED.room,
+                        favorites=EXCLUDED.favorites
+                    WHERE nakami_master_favorite_users.last_seen <= EXCLUDED.last_seen
+                """, *row)
+        except Exception:
+            self._cloud_error = True
+            LOGGER.exception("Could not persist administrator favorite user record")
 
     async def flush_cloud(self, timeout=2):
         if not self._pending_writes:
