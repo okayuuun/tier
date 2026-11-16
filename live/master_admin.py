@@ -527,7 +527,7 @@ class MasterAdmin:
                 self._cloud_error = True
                 LOGGER.exception("Unable to load durable activity counts")
         if self._cloud_ready and not self._cloud_error:
-            note = "管理ログ・対戦履歴はNeon（PostgreSQL）へ保存中。操作ログは30日／最大5000件、対戦履歴は90日です。"
+            note = "管理ログ・対戦履歴・参加者のお気に入り登録はNeon（PostgreSQL）へ保存中。操作ログは30日／最大5000件、対戦履歴・参加者一覧は90日です。"
         elif self._cloud_ready or ROOM_STORE.enabled:
             note = "⚠️ 管理ログのクラウド保存に問題が発生しています。一部の記録が保存されていない可能性があります。"
         else:
@@ -601,6 +601,61 @@ class MasterAdmin:
                          "endedEarly": bool(r["ended_early"])})
         return web.json_response({"rows": rows})
 
+    async def favorite_users(self, request):
+        """Administrator-only, bounded roster of room participants and likes."""
+        self.auth(request)
+        await self.flush_cloud(timeout=1)
+        if self._cloud_ready:
+            try:
+                async with ROOM_STORE.pool.acquire() as conn:
+                    source = await conn.fetch("""
+                        SELECT profile_id,first_seen,last_seen,name,room,favorites
+                        FROM nakami_master_favorite_users
+                        WHERE last_seen >= $1
+                        ORDER BY last_seen DESC LIMIT 300
+                    """, time.time() - FAVORITE_USER_DAYS * 86400)
+            except Exception:
+                self._cloud_error = True
+                LOGGER.exception("Unable to read private participant favorites")
+                raise web.HTTPServiceUnavailable(
+                    text="クラウド上の参加者情報を読み込めません。")
+        else:
+            source = self.db.execute("""
+                SELECT profile_id,first_seen,last_seen,name,room,favorites
+                FROM favorite_users WHERE last_seen >= ?
+                ORDER BY last_seen DESC LIMIT 300
+            """, (time.time() - FAVORITE_USER_DAYS * 86400,)).fetchall()
+
+        online = set()
+        for room in (self.rooms or {}).values():
+            for p in room.get("players", {}).values():
+                socket = p.get("ws")
+                if not socket or socket.closed:
+                    continue
+                opaque = p.get("profileId")
+                if isinstance(opaque, str) and re.fullmatch(r"[a-f0-9]{32}", opaque):
+                    online.add("browser:" + opaque)
+                else:
+                    online.add("legacy:" + room["code"] + ":" + str(p.get("id", "")))
+        rows = []
+        for source_row in source:
+            row = dict(source_row)
+            try:
+                favorites = json.loads(row["favorites"])
+            except (ValueError, TypeError):
+                favorites = []
+            rows.append({
+                "name": row["name"],
+                "firstSeen": utc_stamp(row["first_seen"]),
+                "lastSeen": utc_stamp(row["last_seen"]),
+                "lastRoom": row["room"],
+                "favorites": [g for g in favorites if g in GAMES],
+                "online": row["profile_id"] in online,
+                "personKey": row["profile_id"][-6:],  # Distinguish same-name guests.
+            })
+        return web.json_response({"rows": rows, "retentionDays": FAVORITE_USER_DAYS},
+                                 headers={"Cache-Control": "no-store"})
+
     async def set_public(self, request):
         self.auth(request, True)
         data = await request.json()
@@ -644,7 +699,7 @@ class MasterAdmin:
         self.auth(request, True)
         data = await request.json()
         kind = data.get("kind")
-        if kind not in ("audit", "history", "all") or data.get("confirm") != "DELETE":
+        if kind not in ("audit", "history", "favorites", "all") or data.get("confirm") != "DELETE":
             raise web.HTTPBadRequest(text="対象と確認文字列を確認してください")
         if self._cloud_ready and not await self.flush_cloud(timeout=8):
             raise web.HTTPServiceUnavailable(text="記録の保存処理中です。少し後で削除をやり直してください。")
@@ -656,6 +711,8 @@ class MasterAdmin:
                             await conn.execute("DELETE FROM nakami_master_audit")
                         if kind in ("history", "all"):
                             await conn.execute("DELETE FROM nakami_master_history")
+                        if kind in ("favorites", "all"):
+                            await conn.execute("DELETE FROM nakami_master_favorite_users")
             except Exception:
                 self._cloud_error = True
                 LOGGER.exception("Unable to clear durable admin records")
@@ -664,6 +721,8 @@ class MasterAdmin:
             self.db.execute("DELETE FROM audit")
         if kind in ("history", "all"):
             self.db.execute("DELETE FROM history")
+        if kind in ("favorites", "all"):
+            self.db.execute("DELETE FROM favorite_users")
         self.db.commit()
         return web.json_response({"ok": True})
 
@@ -701,12 +760,14 @@ class MasterAdmin:
                 async with ROOM_STORE.pool.acquire() as conn:
                     tables["audit"] = [dict(r) for r in await conn.fetch("SELECT * FROM nakami_master_audit ORDER BY id")]
                     tables["history"] = [dict(r) for r in await conn.fetch("SELECT * FROM nakami_master_history ORDER BY id")]
+                    tables["favorite_users"] = [dict(r) for r in await conn.fetch(
+                        "SELECT * FROM nakami_master_favorite_users ORDER BY last_seen")]
             except Exception:
                 self._cloud_error = True
                 LOGGER.exception("Unable to export durable admin records")
                 raise web.HTTPServiceUnavailable(text="クラウドの記録を書き出せませんでした。")
         else:
-            for name in ("audit", "history"):
+            for name in ("audit", "history", "favorite_users"):
                 tables[name] = [dict(r) for r in self.db.execute(f"SELECT * FROM {name}").fetchall()]
         return web.json_response({"exportedAt": utc_stamp(time.time()), "records": tables},
                                  headers={"Content-Disposition": 'attachment; filename="nakami-master-backup.json"',
@@ -722,6 +783,7 @@ class MasterAdmin:
             web.get("/api/master/state", self.state),
             web.get("/api/master/logs", self.logs),
             web.get("/api/master/history", self.histories),
+            web.get("/api/master/favorite-users", self.favorite_users),
             web.post("/api/master/visibility", self.set_public),
             web.delete("/api/master/{kind:audit|history}/{id}", self.delete_record),
             web.post("/api/master/purge", self.purge),
