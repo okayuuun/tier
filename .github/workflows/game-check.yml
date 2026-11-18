@@ -73,6 +73,14 @@ jobs:
         run: python live/test_milli.py
       - name: Test anonymous episode game
         run: python live/test_episode.py
+      - name: Test temporary leaderboard links without a database
+        run: python live/test_ranked_challenges_memory.py
+      - name: Test durable ranked challenges with real PostgreSQL and restart
+        env:
+          TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
+        run: python live/test_ranked_challenges_postgres.py
+      - name: Test ranked challenge authoring, UI and score submission
+        run: node live/test_ranked_atorie_ui.js
       - name: Test real PostgreSQL restart snapshots and recovery
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test

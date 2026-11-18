@@ -866,6 +866,10 @@ async def housekeep(app):
         if ROOM_STORE.enabled and now-last_prune>3600:
             try:
                 await ROOM_STORE.prune()
+                # Clean expired scored-link records and abandoned attempts
+                # without affecting game rooms or artwork.
+                from ranked_challenges import STORE as RANKED_STORE
+                await RANKED_STORE.prune()
                 last_prune=now
             except Exception:
                 LOGGER.exception("Pruning expired room snapshots failed")
@@ -929,7 +933,7 @@ async def get_shared_challenge(request):
     return web.json_response({"data": item["data"]}, headers={"Cache-Control": "no-store"})
 
 app = web.Application()
-app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/recent_rooms.js", lambda request: web.FileResponse(ROOT / "public" / "recent_rooms.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")),
+app.add_routes([web.post("/api/challenges", create_shared_challenge), web.get("/api/challenges/{token}", get_shared_challenge), web.get("/", index), web.get("/studio", lambda request: web.FileResponse(ROOT / "public" / "studio.html")), web.get("/profile.js", lambda request: web.FileResponse(ROOT / "public" / "profile.js")), web.get("/studio.js", lambda request: web.FileResponse(ROOT / "public" / "studio.js")), web.get("/ranked_ui.js", lambda request: web.FileResponse(ROOT / "public" / "ranked_ui.js")), web.get("/studio.css", lambda request: web.FileResponse(ROOT / "public" / "studio.css")), web.get("/custom.css", lambda request: web.FileResponse(ROOT / "public" / "custom.css")), web.get("/custom_ui.js", lambda request: web.FileResponse(ROOT / "public" / "custom_ui.js")), web.get("/examples.json", lambda request: web.FileResponse(ROOT / "examples.json")), web.get("/main.js", lambda request: web.FileResponse(ROOT / "public" / "main.js")), web.get("/recent_rooms.js", lambda request: web.FileResponse(ROOT / "public" / "recent_rooms.js")), web.get("/party_ui.js", lambda request: web.FileResponse(ROOT / "public" / "party_ui.js")), web.get("/extra_ui.js", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.js")), web.get("/extra_ui.css", lambda request: web.FileResponse(ROOT / "public" / "extra_ui.css")),
     web.get("/word_ui.js", lambda request: web.FileResponse(ROOT / "public" / "word_ui.js")),
     web.get("/word_ui.css", lambda request: web.FileResponse(ROOT / "public" / "word_ui.css")),
     web.get("/word_rules.js", lambda request: web.FileResponse(ROOT / "public" / "word_rules.js")),
@@ -980,6 +984,9 @@ app.add_routes([
     web.get('/echa.css', lambda request: web.FileResponse(ROOT / 'public' / 'echa.css')),
 ])
 app['master_admin'] = MASTER
+# Shared, scored Atelier challenges use the existing Neon pool when enabled.
+from ranked_challenges import register as register_ranked
+register_ranked(app)
 register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
