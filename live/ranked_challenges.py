@@ -19,6 +19,7 @@ from room_store import store as ROOM_STORE
 DURABLE_TTL = 30 * 86400
 TEMP_TTL = 36 * 3600
 MAX_MEMORY_CHALLENGES = 48
+MAX_DURABLE_CHALLENGES = 200  # Keep free database storage bounded.
 MAX_ATTEMPTS_PER_CHALLENGE = 2000
 MAX_PUBLIC_LEADERS = 100
 MAX_BODY = 690_000
@@ -135,10 +136,19 @@ class RankedStore:
         expires = now + ttl
         if self.durable:
             async with ROOM_STORE.pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO nakami_ranked_challenges(id,created,expires,payload)
-                    VALUES ($1,$2,$3,$4)
-                """, token, now, expires, json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+                async with conn.transaction():
+                    count = await conn.fetchval("""
+                        SELECT COUNT(*) FROM nakami_ranked_challenges
+                        WHERE expires>$1
+                    """, now)
+                    if count >= MAX_DURABLE_CHALLENGES:
+                        raise web.HTTPTooManyRequests(
+                            text="公開問題が現在の保存上限に達しています。しばらく後にお試しください")
+                    await conn.execute("""
+                        INSERT INTO nakami_ranked_challenges(id,created,expires,payload)
+                        VALUES ($1,$2,$3,$4)
+                    """, token, now, expires,
+                    json.dumps(data, ensure_ascii=False, separators=(",", ":")))
         else:
             async with self._lock:
                 self._memory[token] = {"data": data, "created": now,
