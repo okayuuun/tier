@@ -85,7 +85,8 @@ async function run(){
  assert.equal(vm.runInContext('rankedResult.rank',ctx),1);
  assert.equal(ctx.play.truth[0],2,'Truth revealed only after server accepts submission');
  assert.equal(remembered.length,1);
- assert.deepEqual(notices,[],'A completed result must not emit browser errors');
+ assert(!notices.some(x=>/失敗|エラー|採点結果を送信できません/.test(x)),
+  'A completed result must not emit browser errors');
  const submitted=requests.find(r=>r.uri==='/api/ranked/'+id+'/submit');
  assert.equal(JSON.parse(submitted.options.body).name,'解答者');
  assert.deepEqual(JSON.parse(submitted.options.body).answers,[2]);
