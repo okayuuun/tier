@@ -53,6 +53,13 @@ function leaderboardHTML(board){
    '</div>').join('')+'</div>':'<p class="muted">まだ回答者がいません。最初の挑戦者になろう！</p>')+
   '<small class="muted">得点順、同点なら短い回答時間順。このリンクを知っている人には、ニックネームと結果が公開されます。</small></section>'
 }
+function rankedResultHTML(){
+ if(!rankedResult)return '';
+ const position=rankedResult.rank?rankedResult.rank+'位':'100位圏外';
+ return '<div class="result"><strong>あなたの順位：'+X(position)+
+  '</strong><p>回答時間：'+X(rankSeconds(rankedResult.durationMs))+'</p></div>'+
+  leaderboardHTML(rankedBoard)
+}
 async function loadRankedLink(id){
  if(!/^[a-zA-Z0-9_-]{16,40}$/.test(id)){
   ui.innerHTML=section('ランキング問題','リンクの形式が正しくありません');return
