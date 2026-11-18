@@ -8,7 +8,7 @@
   function saveProfile(p){return write('profile',{name:String(p.name||'').trim().slice(0,24),emoji:String(p.emoji||'🌷').slice(0,5),avatar:profileImage(p.avatar)})}
   function profileImage(s){return typeof s==='string'&&/^data:image\/jpeg;base64,[A-Za-z0-9+/=]{1,30000}$/.test(s)?s:''}
   function games(){const a=read('games',[]);return Array.isArray(a)?a.filter(x=>x&&typeof x==='object').slice(0,45):[]}
-  function saveGame(g){if(!g||!['tier','quiz','either','value','soup'].includes(g.game))return false;const a=games(),game={...g,id:String(g.id||('g_'+Date.now()+'_'+Math.random().toString(36).slice(2,8))),savedAt:Date.now()};const ix=a.findIndex(x=>x.id===game.id);if(ix>=0)a.splice(ix,1);a.unshift(game);return write('games',a.slice(0,45))}
+  function saveGame(g){if(!g||!['tier','quiz','either','value','soup','truefalse','multi','order'].includes(g.game))return false;const a=games(),game={...g,id:String(g.id||('g_'+Date.now()+'_'+Math.random().toString(36).slice(2,8))),savedAt:Date.now()};const ix=a.findIndex(x=>x.id===game.id);if(ix>=0)a.splice(ix,1);a.unshift(game);return write('games',a.slice(0,45))}
   function deleteGame(id){return write('games',games().filter(x=>x.id!==id))}
   function records(){const a=read('records',[]);return Array.isArray(a)?a.slice(0,40):[]}
   function remember(r){const a=records(), key=String(r.key||'');if(!key||a.some(x=>x.key===key))return false;a.unshift({...r,at:Date.now()});return write('records',a.slice(0,40))}
