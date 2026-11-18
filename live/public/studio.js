@@ -136,7 +136,7 @@ function verify(x){if(!x||!KIND[x.game]||!x.title?.trim())return '問題セッ�
    return '並べ替えの正しい順番を確認してください';
  }}
  return ''}
-function saveDraft(){const errorText=verify(draft);if(errorText)return alert(errorText);const g=normalized(draft);g.title=g.title.trim();g.config.title=g.title;if(!N.saveGame(g))return alert('ブラウザの保存容量がいっぱいです。画像を減らすか、バックアップを保存してください');draft.id=N.games()[0].id;tab='library';renderLibrary();const note=document.getElementById('saved-notice');if(note)note.textContent='保存しました！「共有リンクをコピー」から友達へ送れます。'}
+function saveDraft(){const errorText=verify(draft);if(errorText)return alert(errorText);const g=normalized(draft);g.title=g.title.trim();g.config.title=g.title;if(!N.saveGame(g))return alert('ブラウザの保存容量がいっぱいです。画像を減らすか、バックアップを保存してください');draft.id=N.games()[0].id;tab='library';renderLibrary();const note=document.getElementById('saved-notice');if(note)note.textContent=RANKED_ONLY.has(g.game)?'保存しました！「🏆 ランキング付きリンクを作る」から友達へ送れます。':'保存しました！「共有リンクをコピー」から友達へ送れます。'}
 function payloadFor(g){const c=normalized(g);return {v:2,game:c.game,title:c.title,config:c.config,truth:c.truth}}
 function embeddedLink(g){return location.origin+'/studio#play='+N.pack(payloadFor(g))}
 async function shareGame(g){const local=embeddedLink(g);if(local.length<=7300)return {url:local,short:false};const c=payloadFor(g),raw=JSON.stringify(c);if(raw.length>650000)throw Error('画像が多すぎます。画像を減らすか、JSONバックアップで共有してください');const resp=await fetch('/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},body:raw});if(!resp.ok)throw Error('共有リンクの作成に失敗しました（'+resp.status+'）');const data=await resp.json();return {url:location.origin+'/studio#share='+data.id,short:true}}
@@ -148,14 +148,35 @@ function downloadText(name,text,type){const blob=new Blob([text],{type}),url=URL
 function exportGames(){downloadText('nakamikurabe-backup.json',JSON.stringify({v:2,kind:'nakamikurabe-backup',profile:N.profile(),games:N.games()},null,2),'application/json')}
 function exportOne(i){const g=N.games()[i];if(g)downloadText('nakamikurabe-'+g.game+'.json',JSON.stringify({kind:'nakamikurabe-challenge',game:payloadFor(g)},null,2),'application/json')}
 async function importGames(e){const file=e.target.files?.[0];if(!file)return;if(file.size>3_000_000)return alert('3MB以下のJSONを選んでください');try{const data=JSON.parse(await file.text());const arr=data.kind==='nakamikurabe-challenge'?[data.game]:data.kind==='nakamikurabe-backup'?data.games:null;if(!Array.isArray(arr))throw Error('形式が違います');let count=0;for(const raw of arr.slice(0,45)){if(KIND[raw.game]){const g=normalized(raw);if(!verify(g)&&N.saveGame(g))count++}}if(data.profile&&confirm('バックアップのプロフィールも復元しますか？'))N.saveProfile(data.profile);alert(count+'件を読み込みました');renderLibrary()}catch(err){alert('読み込めませんでした：'+err.message)}}
-function renderLibrary(){const arr=N.games(),published=rankedLinks();ui.innerHTML=section('保存したゲーム',`<p id="saved-notice" class="muted">このブラウザ内の保存データ：${arr.length}セット。端末を変える前にバックアップしてください。</p><div class="row">${bb('新しく作る',"chooseTab('make')",'primary')}${bb('全部バックアップ','exportGames()','secondary')}<label class="import-label"><span class="btn secondary">JSONを読み込む</span><input type="file" accept=".json,application/json" onchange="importGames(event)" class="hidden"></label></div>${arr.length?`<div class="stack" style="margin-top:16px">${arr.map((g,i)=>`<div class="tile"><div class="row spaced"><strong>${KIND[g.game]?.[0]||'📝'} ${X(g.title)}</strong><span class="badge">${X(KIND[g.game]?.[1]||'')}</span></div><p>${countOf(normalized(g))}問 / ${countImages(g)}枚の画像</p><div class="row">${bb('友達に送るリンク','copyGame('+i+')','primary')}${g.game==='soup'?'':bb('🏆 ランキング付きリンクを作る','publishRanked('+i+')','primary')}${bb('自分で試す','openChallenge('+i+')')}${bb('👥 みんなで遊ぶ','openOnlineRoom('+i+')','primary')}${bb('編集','editGame('+i+')')}${bb('JSONで書き出す','exportOne('+i+')','secondary')}${bb('削除','removeGame('+i+')','danger')}</div>${published.filter(p=>p.gameId===g.id).slice(0,5).map(p=>'<div class="notice">🏆 ランキング公開中（期限：'+X(new Date(p.expiresAt*1000).toLocaleDateString('ja-JP'))+'）<div class="row">'+bb('URLをコピー',"copyRankedLink('"+p.id+"')",'secondary')+bb('ランキングを見る',"openRankedLink('"+p.id+"')",'secondary')+'</div></div>').join('')}</div>`).join('')}</div>`:'<div class="notice">まだありません。「新しく作る」から始めましょう。</div>'}<div class="notice">画像が多い問題はサーバー経由の短いリンクになります。Renderが再起動すると無効になるため、確実に保管するにはJSONを書き出してください。通常の共有リンクには正解が含まれ、結果は集計されません。ランキング付きリンクはサーバーで採点し、提出後に正解を公開します。</div>`,'作った内容はこの端末のブラウザに保存されます。')}
+function renderLibrary(){const arr=N.games(),published=rankedLinks();ui.innerHTML=section('保存したゲーム',`<p id="saved-notice" class="muted">このブラウザ内の保存データ：${arr.length}セット。端末を変える前にバックアップしてください。</p><div class="row">${bb('新しく作る',"chooseTab('make')",'primary')}${bb('全部バックアップ','exportGames()','secondary')}<label class="import-label"><span class="btn secondary">JSONを読み込む</span><input type="file" accept=".json,application/json" onchange="importGames(event)" class="hidden"></label></div>${arr.length?`<div class="stack" style="margin-top:16px">${arr.map((g,i)=>`<div class="tile"><div class="row spaced"><strong>${KIND[g.game]?.[0]||'📝'} ${X(g.title)}</strong><span class="badge">${X(KIND[g.game]?.[1]||'')}</span></div><p>${countOf(normalized(g))}問 / ${countImages(g)}枚の画像</p><div class="row">${RANKED_ONLY.has(g.game)?'':bb('友達に送るリンク','copyGame('+i+')','primary')}${g.game==='soup'?'':bb('🏆 ランキング付きリンクを作る','publishRanked('+i+')','primary')}${bb('自分で試す','openChallenge('+i+')')}${RANKED_ONLY.has(g.game)?'':bb('👥 みんなで遊ぶ','openOnlineRoom('+i+')','primary')}${bb('編集','editGame('+i+')')}${bb('JSONで書き出す','exportOne('+i+')','secondary')}${bb('削除','removeGame('+i+')','danger')}</div>${published.filter(p=>p.gameId===g.id).slice(0,5).map(p=>'<div class="notice">🏆 ランキング公開中（期限：'+X(new Date(p.expiresAt*1000).toLocaleDateString('ja-JP'))+'）<div class="row">'+bb('URLをコピー',"copyRankedLink('"+p.id+"')",'secondary')+bb('ランキングを見る',"openRankedLink('"+p.id+"')",'secondary')+'</div></div>').join('')}</div>`).join('')}</div>`:'<div class="notice">まだありません。「新しく作る」から始めましょう。</div>'}<div class="notice">画像が多い問題はサーバー経由の短いリンクになります。Renderが再起動すると無効になるため、確実に保管するにはJSONを書き出してください。通常の共有リンクには正解が含まれ、結果は集計されません。ランキング付きリンクはサーバーで採点し、提出後に正解を公開します。</div>`,'作った内容はこの端末のブラウザに保存されます。')}
 function countImages(g){const c=normalized(g);let out=0;const arr=c.game==='tier'?c.config.rounds:c.game==='soup'?c.config.puzzles:c.config.qs;for(const x of arr){if(x.image)out++;for(const v of (x.itemImages||x.optionImages||[]))if(v)out++}return out}
 function renderProfile(){const p=N.profile(),r=N.records(),face=p.avatar?`<img class="thumb" src="${p.avatar}" alt="保存したアイコン">`:`<span class="thumb">${X(p.emoji)}</span>`;ui.innerHTML=section('自分のプロフィール',`<div class="row">${face}<div><strong>${X(p.name||'ゲスト')}</strong><p class="muted">写真は96×96pxに縮小して保存します。</p></div></div><label>ニックネーム</label><input id="prof-name" class="field" maxlength="24" value="${X(p.name)}"><label>写真を使わないときのアイコン</label><div class="row">${['🌷','🌙','🐈','🎮','🍮','🍀','⭐','🐻','🌸','🦊'].map(e=>`<button class="tiny" style="font-size:24px" onclick="document.getElementById('prof-emoji').value='${e}'">${e}</button>`).join('')}</div><input id="prof-emoji" class="field" maxlength="5" value="${X(p.emoji)}"><label>アイコン写真</label><input id="prof-photo" class="field" type="file" accept="image/png,image/jpeg,image/webp"><div class="row" style="margin-top:15px">${bb('保存','saveMyProfile()','primary')}${bb('写真を削除','clearMyPhoto()')}</div><div class="notice">ブラウザ保存のため端末間同期はありません。ルーム参加中、登録したアイコンはほかの参加者にも表示されます。</div>`)+section('最近のプレイ記録',r.length?`<div class="stack">${r.slice(0,15).map(x=>`<div class="stat">${X(x.title)} <span class="muted">${X(x.info||'')} · ${new Date(x.at).toLocaleDateString('ja-JP')}</span></div>`).join('')}</div>`:'<div class="muted">まだ記録はありません。</div>')}
 function shrinkImage(file){return new Promise((resolve,reject)=>{if(!file||!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5_000_000)return reject(Error('5MB以下の画像を選んでください'));const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{try{const cv=document.createElement('canvas');cv.width=cv.height=96;const ctx=cv.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,96,96);let s=Math.max(96/img.width,96/img.height);ctx.drawImage(img,(96-img.width*s)/2,(96-img.height*s)/2,img.width*s,img.height*s);const data=cv.toDataURL('image/jpeg',.75);URL.revokeObjectURL(url);resolve(data)}catch(e){URL.revokeObjectURL(url);reject(e)}};img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('画像を開けません'))};img.src=url})}
 async function saveMyProfile(){const p=N.profile();p.name=document.getElementById('prof-name').value.trim().slice(0,24);p.emoji=document.getElementById('prof-emoji').value||'🌷';const file=document.getElementById('prof-photo').files?.[0];try{if(file)p.avatar=await shrinkImage(file);if(!N.saveProfile(p))return alert('保存できませんでした。ブラウザ容量を確認してください');if(p.name)sessionStorage.setItem('nakami_name',p.name);alert('保存しました');renderProfile()}catch(e){alert(e.message)}}
 function clearMyPhoto(){const p=N.profile();p.avatar='';N.saveProfile(p);renderProfile()}
-function validChallenge(raw){if(!raw||!KIND[raw.game]||![1,2].includes(raw.v)||typeof raw.title!=='string'||raw.title.length>120||typeof raw.config!=='object'||raw.config===null)return false;try{const g=normalized(raw);const amount=countOf(g);if(amount<1||amount>MAX[g.game]||JSON.stringify(g).length>650000)return false;if(g.game==='tier')return g.config.rounds.every((r,i)=>r.items.length===5&&g.truth[i].length===5);if(g.game==='soup')return g.config.puzzles.every(p=>typeof p.situation==='string'&&typeof p.solution==='string');return g.config.qs.every((q,i)=>typeof q.q==='string'&&q.options.length===({quiz:4,either:2,value:3}[g.game])&&Number.isInteger(g.truth[i])&&g.truth[i]>=0&&g.truth[i]<q.options.length)}catch{return false}}
-function loadChallenge(raw){if(!validChallenge(raw))throw Error('この問題データは読み込めません');if(!isStudioPublished(raw.game))throw Error('このゲームは現在非公開です');play=normalized(raw);guesses=play.game==='tier'?play.config.rounds.map(()=>[0,1,2,3,4]):play.game==='soup'?[]:play.config.qs.map(()=>null);shownHints=[];notes=[];finished=false;tab='play';playIndex=0;render()}
+function validChallenge(raw){
+ if(!raw||!KIND[raw.game]||![1,2].includes(raw.v)||typeof raw.title!=='string'||
+    raw.title.length>120||typeof raw.config!=='object'||raw.config===null)return false;
+ try{
+  const g=normalized(raw),amount=countOf(g);
+  if(amount<1||amount>MAX[g.game]||JSON.stringify(g).length>650000)return false;
+  if(g.game==='tier')return g.config.rounds.every((r,i)=>r.items.length===5&&g.truth[i].length===5);
+  if(g.game==='soup')return g.config.puzzles.every(p=>typeof p.situation==='string'&&typeof p.solution==='string');
+  return g.config.qs.every((q,i)=>{
+   if(typeof q.q!=='string'||!q.q.trim()||q.options.length!==questionSize(g.game))return false;
+   const a=g.truth[i];
+   if(g.game==='multi')return Array.isArray(a)&&a.length>=2&&a.length<=4&&
+    a.every(n=>Number.isInteger(n)&&n>=0&&n<4)&&new Set(a).size===a.length;
+   if(g.game==='order')return Array.isArray(a)&&a.length===4&&
+    a.every(n=>Number.isInteger(n))&&new Set(a).size===4&&a.every(n=>n>=0&&n<4);
+   return Number.isInteger(a)&&a>=0&&a<q.options.length
+  })
+ }catch{return false}
+}
+function loadChallenge(raw){if(!validChallenge(raw))throw Error('この問題データは読み込めません');if(!isStudioPublished(raw.game))throw Error('このゲームは現在非公開です');play=normalized(raw);guesses=play.game==='tier'?play.config.rounds.map(()=>[0,1,2,3,4]):
+  play.game==='order'?play.config.qs.map(()=>[0,1,2,3]):
+  play.game==='multi'?play.config.qs.map(()=>[]):
+  play.game==='soup'?[]:play.config.qs.map(()=>null);shownHints=[];notes=[];finished=false;tab='play';playIndex=0;render()}
 function startFromUrl(){const hash=location.hash;if(hash.startsWith('#rank=')){loadRankedLink(hash.slice(6));return true}if(hash.startsWith('#play=')){try{const c=N.unpack(hash.slice(6));loadChallenge(c)}catch(e){ui.innerHTML=section('リンクを開けませんでした',`<p>${X(e.message)}</p>${bb('ホームに戻る',"chooseTab('home')")}`)}return true}
  if(hash.startsWith('#share=')){const id=hash.slice(7);ui.innerHTML=section('問題を読み込み中','<p>画像つきの問題を取得しています…</p>');if(!/^[a-zA-Z0-9_-]{12,40}$/.test(id)){ui.innerHTML=section('読み込み失敗',`<p>リンクが正しくありません。</p>${bb('ホームへ',"chooseTab('home')")}`);return true}fetch('/api/challenges/'+encodeURIComponent(id)).then(async r=>{if(!r.ok)throw Error('問題が見つかりません（サーバー再起動で消えた可能性があります）');return r.json()}).then(v=>loadChallenge(v.data)).catch(e=>{ui.innerHTML=section('読み込み失敗',`<p>${X(e.message)}</p>${bb('ホームへ',"chooseTab('home')")}`)});return true}
  return false}
@@ -163,13 +184,43 @@ function showPlay(i){playIndex=Math.max(0,Math.min(countOf(play)-1,i));renderPla
 function setGuess(i,j){guesses[i]=j;renderPlay()}
 function changeHint(){shownHints[playIndex]=Math.min(3,(shownHints[playIndex]||0)+1);renderPlay()}
 function saveMemo(s){notes[playIndex]=s}
-function challengeScore(){if(!play||play.game==='soup')return null;if(play.game==='tier')return guesses.reduce((score,a,i)=>score+a.filter((x,j)=>x===play.truth[i][j]).length,0);return guesses.filter((x,i)=>x===play.truth[i]).length}
-function maximumScore(){return play.game==='tier'?countOf(play)*5:countOf(play)}
-function finishChallenge(){if(play.game!=='soup'&&play.game!=='tier'&&guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');if(rankedAttempt)return finishRanked();finished=true;const pts=challengeScore();N.remember({key:'solo_'+Date.now()+'_'+Math.random(),title:play.title,info:pts===null?'真相を確認':`正解 ${pts}/${maximumScore()}`,game:play.game});renderPlay()}
+function challengeScore(){
+ if(!play||play.game==='soup')return null;
+ if(play.game==='tier'||play.game==='order')
+  return guesses.reduce((score,a,i)=>score+a.filter((x,j)=>x===play.truth[i][j]).length,0);
+ if(play.game==='multi')
+  return guesses.filter((a,i)=>a.length===play.truth[i].length&&
+   a.every(x=>play.truth[i].includes(x))).length;
+ return guesses.filter((x,i)=>x===play.truth[i]).length
+}
+function maximumScore(){return play.game==='tier'?countOf(play)*5:play.game==='order'?countOf(play)*4:countOf(play)}
+function finishChallenge(){if(play.game!=='soup'&&play.game!=='tier'&&guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');if(play.game==='multi'&&guesses.some(a=>a.length<2))
+  return alert('各問題で正解だと思うものを2個以上選んでください');
+ if(rankedAttempt)return finishRanked();finished=true;const pts=challengeScore();N.remember({key:'solo_'+Date.now()+'_'+Math.random(),title:play.title,info:pts===null?'真相を確認':`正解 ${pts}/${maximumScore()}`,game:play.game});renderPlay()}
 async function copySoloScore(){const pts=challengeScore(),text=play.title+' に挑戦！\n結果：'+pts+'/'+maximumScore()+'点\nなかみくらべ。';try{await navigator.clipboard.writeText(text);alert('結果をコピーしました')}catch{prompt('この結果をコピーしてください',text)}}
 function renderPlay(){if(!play){ui.innerHTML=section('問題がありません',bb('ホーム',"chooseTab('home')"));return}const g=play.game,c=play.config,num=countOf(play),i=playIndex;let content='';
  if(g==='tier'){const q=c.rounds[i];content=`<h3>${X(q.title||play.title)}</h3>${imageHTML(q.image)}<div class="tier-play-images">${q.items.map((v,k)=>`<div>${imageHTML(q.itemImages?.[k],'候補 '+(k+1),'option-thumb')}<span>${X(v)}</span></div>`).join('')}</div><p class="muted">この人のS〜Dの並びを予想して矢印で並べ替えてください。</p>${tierRows(guesses[i],q.items,'play',i)}`}
  else if(g==='soup'){const q=c.puzzles[i];content=`<h3>なぜ？</h3>${imageHTML(q.image)}<p class="mystery-text">${X(q.situation)}</p>${(q.hints||[]).slice(0,shownHints[i]||0).map((h,j)=>`<div class="notice">ヒント${j+1}：${X(h||'（なし）')}</div>`).join('')}${!finished?bb('💡 ヒントを見る','changeHint()','secondary'):''}<label>推理メモ</label><textarea class="field" maxlength="1000" oninput="saveMemo(this.value)" placeholder="気づいたことを自由にメモ">${X(notes[i]||'')}</textarea>${finished?`<div class="result"><h3>真相</h3><p>${X(q.solution)}</p></div>`:''}`}
+ else if(g==='multi'){
+  const q=c.qs[i],selected=guesses[i],truth=play.truth[i];
+  content=`<h3>${X(q.q)}</h3>${imageHTML(q.image)}
+  <p class="muted">正解だと思う選択肢を2個以上選ぼう。全て当てると1点！</p>
+  <div class="option-play">${q.options.map((v,k)=>`<button type="button"
+   class="challenge-choice ${selected.includes(k)?'selected':''}" ${finished?'disabled':''}
+   onclick="toggleMultiGuess(${i},${k})">
+   ${imageHTML(q.optionImages?.[k],'候補 '+(k+1),'option-thumb')}
+   <span>${selected.includes(k)?'☑':'☐'} ${'ABCD'[k]}. ${X(v)}</span></button>`).join('')}</div>
+   ${finished?`<div class="result"><strong>${selected.length===truth.length&&selected.every(x=>truth.includes(x))?'✓ 完全正解':'✕ 不正解'}</strong>
+   <p>正解：${truth.map(k=>X(q.options[k])).join(' ／ ')}</p></div>`:''}`
+ }
+ else if(g==='order'){
+  const q=c.qs[i],correct=play.truth[i];
+  content=`<h3>${X(q.q)}</h3>${imageHTML(q.image)}
+  <p class="muted">上から順に正しく並べ替えてね。正しい位置1つにつき1点。</p>
+  ${orderRows(guesses[i],q.options,finished?'correct':'play',i)}
+  ${finished?`<div class="result"><strong>正しい並び</strong>
+  ${orderRows(correct,q.options,'correct',i)}</div>`:''}`
+ }
  else {const q=c.qs[i];content=`<h3>${X(q.q)}</h3>${imageHTML(q.image)}<div class="option-play">${q.options.map((label,k)=>`<button type="button" class="challenge-choice ${guesses[i]===k?'selected':''}" ${finished?'disabled':''} onclick="setGuess(${i},${k})">${imageHTML(q.optionImages?.[k], '選択肢'+(k+1),'option-thumb')}<span>${guesses[i]===k?'✓ ':''}${'ABCD'[k]}. ${X(label)}</span></button>`).join('')}</div>${finished?`<div class="result"><strong>${guesses[i]===play.truth[i]?'✓ 正解':'✕ 不正解'}</strong><p>正解：${X(q.options[play.truth[i]])}</p></div>`:''}`}
  if(finished&&g==='tier'){content+=`<div class="result"><strong>主役の正解Tier表</strong>${tierRows(play.truth[i],c.rounds[i].items,'correct',i)}</div>`}
  const nav=`<div class="solo-progress"><strong>${i+1} / ${num}</strong><div class="progress-track"><span style="width:${(i+1)/num*100}%"></span></div></div>`;
