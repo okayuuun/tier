@@ -11,3 +11,8 @@
 @media(max-width:640px){.question-actions .btn{flex:1}.editor-toolbar .row .btn{min-width:100px}.option-thumb{width:50px;height:50px}.editor-image{max-height:130px}.photo-control .btn,.mini-upload{font-size:10px;padding:6px 7px}.question-nav{max-height:81px}.question .choicegrid{grid-template-columns:1fr}}
 
 .photo-control summary{cursor:pointer;list-style-position:inside}.photo-control:not([open]){padding:8px 10px;margin:7px 0;background:#fffafd}.photo-control[open]{padding:10px 11px}.photo-control summary:focus-visible{outline:3px solid #6754ae}.photo-control[open] .photo-label{margin-bottom:9px}
+/* New standalone ranking game input styles. */
+.multi-check{display:flex;align-items:center;gap:9px;padding:12px;border:1px solid #ebc5da;border-radius:10px;background:#fff8fd;cursor:pointer;min-width:0;font-size:13px;line-height:1.5}
+.multi-check input{width:21px;height:21px;accent-color:#d83491;flex:none}
+.multi-check span{flex:1;overflow-wrap:anywhere}
+.multi-check:has(input:checked){background:#ffe2f2;border-color:#e15ca8}

@@ -13,7 +13,7 @@ import time
 
 from aiohttp import web
 
-from custom_live import validate_game
+from custom_live import validate_game, clean_image, nonempty
 from room_store import store as ROOM_STORE
 
 DURABLE_TTL = 30 * 86400
@@ -28,12 +28,80 @@ NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,24}$")
 
 # Only scored exercises are supported: open-ended mysteries have no objective
 # answer that can be ranked by number correct.
-SCORED_GAMES = {"tier", "quiz", "either", "value"}
+SCORED_GAMES = {"tier", "quiz", "either", "value", "truefalse", "multi", "order"}
+RANKED_ONLY = {"truefalse", "multi", "order"}
+
+
+def is_published(app, kind):
+    """These three modes exist only in Atelier, never in live room catalogs."""
+    return kind in RANKED_ONLY or app["master_admin"].published(kind)
+
+
+def clean_ranked_only(raw):
+    kind = raw["game"]
+    if len(json.dumps(raw, ensure_ascii=False).encode("utf-8")) > 650_000:
+        raise ValueError("問題画像を減らしてください（650KBまで）")
+    title = nonempty(raw.get("title"), 100, "タイトルを入力してください")
+    config = raw.get("config")
+    if not isinstance(config, dict):
+        raise ValueError("問題形式が違います")
+    entries = config.get("qs")
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 30:
+        raise ValueError("問題は1〜30問まで作成できます")
+    truth = raw.get("truth")
+    if not isinstance(truth, list) or len(truth) != len(entries):
+        raise ValueError("正解の数を確認してください")
+    questions, keys = [], []
+    size = 2 if kind == "truefalse" else 4
+    for q, correct in zip(entries, truth):
+        if not isinstance(q, dict):
+            raise ValueError("問題形式が違います")
+        question = nonempty(q.get("q"), 300, "問題文を入力してください")
+        options = q.get("options")
+        if kind == "truefalse":
+            # Labels are fixed; accepting arbitrarily changed labels would
+            # permit trick questions where the meaning of ○/× is reversed.
+            options = ["○ 正しい", "× 間違い"]
+        elif (not isinstance(options, list) or len(options) != size
+              or any(not isinstance(v, str) or not v.strip()
+                     or len(v) > 160 for v in options)
+              or len({v.strip() for v in options}) != size):
+            raise ValueError("4つの異なる選択肢を入力してください")
+        if type(correct) is int and kind == "truefalse" and 0 <= correct < 2:
+            pass
+        elif (kind == "multi" and isinstance(correct, list)
+              and 2 <= len(correct) <= 4
+              and all(type(v) is int for v in correct)
+              and len(set(correct)) == len(correct)
+              and all(0 <= v < 4 for v in correct)):
+            correct = sorted(correct)
+        elif (kind == "order" and isinstance(correct, list)
+              and len(correct) == 4
+              and all(type(v) is int for v in correct)
+              and set(correct) == set(range(4))):
+            pass
+        else:
+            raise ValueError("正解の指定が不正です")
+        images = q.get("optionImages") or [""] * size
+        if not isinstance(images, list) or len(images) != size:
+            raise ValueError("選択肢画像の数が不正です")
+        questions.append({
+            "q": question,
+            "options": options,
+            "image": clean_image(q.get("image")),
+            "optionImages": [clean_image(v) for v in images]
+        })
+        keys.append(correct)
+    return {"v": 2, "game": kind, "title": title,
+            "config": {"qs": questions}, "truth": keys}
+
 
 
 def clean_challenge(raw):
     if not isinstance(raw, dict) or raw.get("game") not in SCORED_GAMES:
-        raise ValueError("ランキング対応はTier表・理解度クイズ・2択・3択のみです")
+        raise ValueError("ランキングに対応していない問題形式です")
+    if raw["game"] in RANKED_ONLY:
+        return clean_ranked_only(raw)
     validated = validate_game(raw)  # Strict image/question/answer validation.
     kind = validated["game"]
     config_key = "rounds" if kind == "tier" else "qs"
@@ -59,7 +127,22 @@ def score_answers(data, answers):
                 raise ValueError("Tier表の並びが正しくありません")
         return (sum(a == b for chosen, correct in zip(answers, truth)
                     for a, b in zip(chosen, correct)), len(truth) * 5)
-    option_count = {"quiz": 4, "either": 2, "value": 3}[data["game"]]
+    if data["game"] == "multi":
+        for row in answers:
+            if (not isinstance(row, list) or not 2 <= len(row) <= 4
+                or any(type(v) is not int or not 0 <= v < 4 for v in row)
+                or len(set(row)) != len(row)):
+                raise ValueError("正解だと思う選択肢を2つ以上選んでください")
+        return sum(set(a) == set(b) for a, b in zip(answers, truth)), len(truth)
+    if data["game"] == "order":
+        for row in answers:
+            if (not isinstance(row, list) or len(row) != 4
+                or any(type(v) is not int for v in row)
+                or set(row) != set(range(4))):
+                raise ValueError("4つの選択肢を正しく並べてください")
+        return (sum(a == b for chosen, correct in zip(answers, truth)
+                    for a,b in zip(chosen,correct)),len(truth)*4)
+    option_count = {"quiz": 4, "either": 2, "value": 3, "truefalse": 2}[data["game"]]
     if any(type(v) is not int or not 0 <= v < option_count for v in answers):
         raise ValueError("選択肢を確認してください")
     return sum(a == b for a, b in zip(answers, truth)), len(truth)
@@ -303,7 +386,7 @@ async def create(request):
         cleaned = clean_challenge(data)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise web.HTTPBadRequest(text=str(exc)[:180])
-    if not request.app["master_admin"].published(cleaned["game"]):
+    if not is_published(request.app,cleaned["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     result = await STORE.create(cleaned)
     return web.json_response(result, headers={"Cache-Control": "no-store"})
@@ -312,7 +395,7 @@ async def create(request):
 async def get(request):
     record = await STORE.get(request.match_info["id"])
     game = record["data"]["game"]
-    if not request.app["master_admin"].published(game):
+    if not is_published(request.app,game):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     return web.json_response({"data": public_challenge(record["data"]),
                               "expiresAt": record["expires"],
@@ -322,7 +405,7 @@ async def get(request):
 
 async def start(request):
     record = await STORE.get(request.match_info["id"])
-    if not request.app["master_admin"].published(record["data"]["game"]):
+    if not is_published(request.app,record["data"]["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     return web.json_response(await STORE.start_attempt(request.match_info["id"]),
                              headers={"Cache-Control": "no-store"})
@@ -341,7 +424,7 @@ async def submit(request):
     if not isinstance(data, dict):
         raise web.HTTPBadRequest(text="回答の形式が違います")
     record = await STORE.get(request.match_info["id"])
-    if not request.app["master_admin"].published(record["data"]["game"]):
+    if not is_published(request.app,record["data"]["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     result = await STORE.submit(request.match_info["id"], data.get("attempt"),
                                 data.get("name"), data.get("answers"))
@@ -350,7 +433,7 @@ async def submit(request):
 
 async def leaderboard(request):
     record = await STORE.get(request.match_info["id"])
-    if not request.app["master_admin"].published(record["data"]["game"]):
+    if not is_published(request.app,record["data"]["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     result = await STORE.leaders(request.match_info["id"])
     return web.json_response({"rows": [dict((k,v) for k,v in row.items()
