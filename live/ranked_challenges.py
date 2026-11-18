@@ -14,7 +14,7 @@ import time
 from aiohttp import web
 
 from custom_live import validate_game
-from room_store import ROOM_STORE
+from room_store import store as ROOM_STORE
 
 DURABLE_TTL = 30 * 86400
 TEMP_TTL = 36 * 3600
