@@ -81,6 +81,10 @@ jobs:
         run: python live/test_ranked_challenges_postgres.py
       - name: Test ranked challenge authoring, UI and score submission
         run: node live/test_ranked_atorie_ui.js
+      - name: Test three new ranked game formats through real HTTP requests
+        run: python live/test_ranked_new_modes.py
+      - name: Test new Atelier editors and playable ranked mode controls
+        run: node live/test_studio_new_ranked_games.js
       - name: Test real PostgreSQL restart snapshots and recovery
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
