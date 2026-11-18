@@ -32,7 +32,8 @@ const responseMap={
 };
 const ctx={
  console,JSON,Date,Math,Number,encodeURIComponent,
- location:{origin:'https://example.com',hash:''},ui,tab:'home',
+ location:{origin:'https://example.com',hash:''},ui,tab:'home',finished:false,
+ renderPlay:()=>{rendered++},
  N:{games:()=>[authorGame],profile:()=>({name:'プレイヤー'}),remember:x=>remembered.push(x)},
  localStorage:{
   getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)
@@ -84,6 +85,7 @@ async function run(){
  assert.equal(vm.runInContext('rankedResult.rank',ctx),1);
  assert.equal(ctx.play.truth[0],2,'Truth revealed only after server accepts submission');
  assert.equal(remembered.length,1);
+ assert.deepEqual(notices,[],'A completed result must not emit browser errors');
  const submitted=requests.find(r=>r.uri==='/api/ranked/'+id+'/submit');
  assert.equal(JSON.parse(submitted.options.body).name,'解答者');
  assert.deepEqual(JSON.parse(submitted.options.body).answers,[2]);
