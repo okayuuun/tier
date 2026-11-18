@@ -85,6 +85,10 @@ jobs:
         run: python live/test_ranked_new_modes.py
       - name: Test new Atelier editors and playable ranked mode controls
         run: node live/test_studio_new_ranked_games.js
+      - name: Test new numeric, pairing and typed ranked challenge HTTP endpoints
+        run: python live/test_ranked_researched_modes.py
+      - name: Test creation and playable controls for three researched quiz modes
+        run: node live/test_studio_researched_modes.js
       - name: Test real PostgreSQL restart snapshots and recovery
         env:
           TEST_ROOM_DATABASE_URL: postgresql://postgres:testing_only@localhost:5432/nakami_test
