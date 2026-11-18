@@ -10,6 +10,7 @@ import json
 import re
 import secrets
 import time
+import unicodedata
 
 from aiohttp import web
 
@@ -28,13 +29,66 @@ NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,24}$")
 
 # Only scored exercises are supported: open-ended mysteries have no objective
 # answer that can be ranked by number correct.
-SCORED_GAMES = {"tier", "quiz", "either", "value", "truefalse", "multi", "order"}
-RANKED_ONLY = {"truefalse", "multi", "order"}
+SCORED_GAMES = {"tier", "quiz", "either", "value", "truefalse", "multi", "order",
+                "number", "pairs", "typing"}
+RANKED_ONLY = {"truefalse", "multi", "order", "number", "pairs", "typing"}
 
 
 def is_published(app, kind):
     """These three modes exist only in Atelier, never in live room catalogs."""
     return kind in RANKED_ONLY or app["master_admin"].published(kind)
+
+
+def normalize_guess(value):
+    """NFKC handles kana width/case variants; ignores whitespace for typing."""
+    return "".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def validated_number(value, low, high):
+    return type(value) is int and low <= value <= high
+
+
+def validate_extra_mode(kind, q, correct, question):
+    """Strictly validate new independent scoring mechanics and their keys."""
+    image = clean_image(q.get("image"))
+    if kind == "number":
+        low, high, tolerance = q.get("min"), q.get("max"), q.get("tolerance")
+        if (not validated_number(low, -1000000, 1000000)
+            or not validated_number(high, -1000000, 1000000)
+            or high <= low or high - low > 1000000
+            or not validated_number(tolerance, 1, high-low)
+            or not validated_number(correct, low, high)):
+            raise ValueError("数値の範囲・許容誤差・正解を確認してください")
+        unit = q.get("unit", "")
+        if not isinstance(unit,str) or len(unit)>15 or any(ord(c)<32 for c in unit):
+            raise ValueError("単位は15文字以内で入力してください")
+        return {"q": question, "min": low, "max": high,
+                "tolerance": tolerance, "unit": unit, "image": image}, correct
+    if kind == "typing":
+        if not isinstance(correct,str) or len(correct)>300:
+            raise ValueError("答えは300文字以内で入力してください")
+        variants = correct.split("|")
+        if not 1 <= len(variants) <= 5 or any(
+            not v.strip() or len(v.strip())>60 or not normalize_guess(v)
+            for v in variants):
+            raise ValueError("答えは1〜5個、各60文字以内で入力してください")
+        if len(set(normalize_guess(v) for v in variants))!=len(variants):
+            raise ValueError("別表記が重複しています")
+        return {"q": question, "image": image}, "|".join(v.strip() for v in variants)
+    options = q.get("options")
+    right = q.get("rightOptions")
+    if (not isinstance(options,list) or len(options)!=4
+        or not isinstance(right,list) or len(right)!=4
+        or any(not isinstance(x,str) or not x.strip() or len(x)>160
+               for x in options+right)
+        or len(set(x.strip() for x in options))!=4
+        or len(set(x.strip() for x in right))!=4
+        or not isinstance(correct,list) or len(correct)!=4
+        or any(type(x) is not int for x in correct)
+        or set(correct)!=set(range(4))):
+        raise ValueError("左右4つの候補と正しいペアを設定してください")
+    return {"q":question, "options":options, "rightOptions":right,
+            "image":image},correct
 
 
 def clean_ranked_only(raw):
@@ -57,6 +111,11 @@ def clean_ranked_only(raw):
         if not isinstance(q, dict):
             raise ValueError("問題形式が違います")
         question = nonempty(q.get("q"), 300, "問題文を入力してください")
+        if kind in ("number", "pairs", "typing"):
+            public_q, answer = validate_extra_mode(kind, q, correct, question)
+            questions.append(public_q)
+            keys.append(answer)
+            continue
         options = q.get("options")
         if kind == "truefalse":
             # Labels are fixed; accepting arbitrarily changed labels would
@@ -142,6 +201,30 @@ def score_answers(data, answers):
                 raise ValueError("4つの選択肢を正しく並べてください")
         return (sum(a == b for chosen, correct in zip(answers, truth)
                     for a,b in zip(chosen,correct)),len(truth)*4)
+    if data["game"] == "number":
+        total=0
+        for q, answer, correct in zip(data["config"]["qs"], answers, truth):
+            if not validated_number(answer,q["min"],q["max"]):
+                raise ValueError("数字は指定された範囲の整数で入力してください")
+            delta=abs(answer-correct)
+            # 100 points for an exact answer; linearly fewer points inside
+            # the creator-defined tolerance; zero at/after that distance.
+            total+=max(0, (100*(q["tolerance"]-delta)+q["tolerance"]//2)//q["tolerance"])
+        return total,len(truth)*100
+    if data["game"] == "typing":
+        if any(not isinstance(a,str) or not a.strip() or len(a)>80
+               for a in answers):
+            raise ValueError("すべての問題に文字で回答してください")
+        return sum(normalize_guess(a) in {normalize_guess(v) for v in
+            correct.split("|")} for a,correct in zip(answers,truth)),len(truth)
+    if data["game"] == "pairs":
+        for answer in answers:
+            if (not isinstance(answer,list) or len(answer)!=4
+                or any(type(x) is not int for x in answer)
+                or set(answer)!=set(range(4))):
+                raise ValueError("左右の4項目を1対1で結んでください")
+        return sum(a==b for row,truth_row in zip(answers,truth)
+                   for a,b in zip(row,truth_row)),len(truth)*4
     option_count = {"quiz": 4, "either": 2, "value": 3, "truefalse": 2}[data["game"]]
     if any(type(v) is not int or not 0 <= v < option_count for v in answers):
         raise ValueError("選択肢を確認してください")

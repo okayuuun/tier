@@ -4,13 +4,16 @@ const ui=document.getElementById('content');
 const X=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=NKM;
 let STUDIO_PUBLIC=null;
-const RANKED_ONLY = new Set(['truefalse','multi','order']);
+const RANKED_ONLY = new Set(['truefalse','multi','order','number','pairs','typing']);
 const isStudioPublished=g=>RANKED_ONLY.has(g)||!STUDIO_PUBLIC||STUDIO_PUBLIC.includes(g);
 const KIND={tier:['🏆','みんなでティア表！','主役のS〜Dを予想する'],quiz:['🎯','理解度チェック','本人の答えを予想する'],either:['⚖️','恋愛究極の２択','本人が選んだA/Bを予想する'],value:['💗','これって重い？判定シート','3段階の価値観を予想する'],soup:['🔎','ウミガメのスープ','質問して真相にたどり着く'],
  truefalse:['⭕','○×チャレンジ','自作の○×問題に挑戦！'],
  multi:['🧩','正解を全部選べ！','4択から複数の正解をすべて探す'],
- order:['🔢','順番を当てろ！','4つの項目を正しい順番に並べる']};
-const MAX={tier:15,quiz:30,either:30,value:30,soup:20,truefalse:30,multi:30,order:30};
+ order:['🔢','順番を当てろ！','4つの項目を正しい順番に並べる'],
+ number:['🎯','数字ピタリ！','数字を予想。近いほど高得点！'],
+ pairs:['🔗','ペアをつなげ！','4つの項目を正しい相手と結ぶ'],
+ typing:['⌨️','文字で答えよう！','答えを直接入力。別表記も正解になる']};
+const MAX={tier:15,quiz:30,either:30,value:30,soup:20,truefalse:30,multi:30,order:30,number:30,pairs:30,typing:30};
 let tab='home',draft=null,play=null,guesses=[],playIndex=0,shownHints=[],notes=[],finished=false,shareLink='',activeEditor=0;
 const bb=(t,fn,cls='')=>`<button type="button" class="btn ${cls}" onclick="${X(fn)}">${X(t)}</button>`;
 const section=(title,body,desc='')=>`<section class="panel"><h2>${X(title)}</h2>${desc?`<p>${X(desc)}</p>`:''}${body}</section>`;
@@ -18,9 +21,12 @@ function idValue(){return 'g_'+Date.now()+'_'+Math.random().toString(36).slice(2
 function countOf(g){return g.game==='tier'?g.config.rounds.length:g.game==='soup'?g.config.puzzles.length:g.config.qs.length}
 function imageOK(s){return typeof s==='string'&&s.length<90000&&(/^data:image\/(?:webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(s)||/^https:\/\/[^\s<>"']{1,1000}$/.test(s))}
 function imageHTML(src,alt='問題の画像',cls='question-image'){return imageOK(src)?`<img class="${cls}" src="${X(src)}" alt="${X(alt)}" loading="lazy">`:''}
-function questionSize(kind){return kind==='either'||kind==='truefalse'?2:kind==='value'?3:4}
-function emptyQuestion(kind){return {q:'',options:kind==='truefalse'?['○ 正しい','× 間違い']:Array(questionSize(kind)).fill(''),image:'',optionImages:Array(questionSize(kind)).fill('')}}
-function initialTruth(kind){return kind==='multi'?[0,1]:kind==='order'?[0,1,2,3]:0}
+function questionSize(kind){return kind==='number'||kind==='typing'?0:kind==='either'||kind==='truefalse'?2:kind==='value'?3:4}
+function emptyQuestion(kind){return {
+ q:'',options:kind==='truefalse'?['○ 正しい','× 間違い']:Array(questionSize(kind)).fill(''),
+ image:'',optionImages:Array(questionSize(kind)).fill(''),...moreDefault(kind)
+}}
+function initialTruth(kind){return kind==='multi'?[0,1]:kind==='order'||kind==='pairs'?[0,1,2,3]:kind==='number'?50:kind==='typing'?'':0}
 function emptyRound(){return {title:'',items:Array(5).fill(''),image:'',itemImages:Array(5).fill('')}}
 function emptyPuzzle(){return {situation:'',solution:'',hints:['','',''],image:''}}
 function normalized(g){const out=JSON.parse(JSON.stringify(g));out.v=2;out.config=out.config||{};
@@ -33,11 +39,19 @@ function normalized(g){const out=JSON.parse(JSON.stringify(g));out.v=2;out.confi
    if(!Array.isArray(out.config.puzzles))out.config.puzzles=[{situation:out.config.situation||'',solution:out.config.solution||'',hints:out.config.hints||['','',''],image:out.config.image||''}];
    out.config.puzzles=out.config.puzzles.map(p=>({...emptyPuzzle(),...p,hints:Array.from({length:3},(_,i)=>p.hints?.[i]||'')}));out.truth=[];
  }else {
-   out.config.qs=(Array.isArray(out.config.qs)?out.config.qs:[emptyQuestion(out.game)]).map(q=>({...emptyQuestion(out.game),...q,options:out.game==='truefalse'?['○ 正しい','× 間違い']:Array.from({length:questionSize(out.game)},(_,i)=>String(q.options?.[i]||'')),optionImages:Array.from({length:questionSize(out.game)},(_,i)=>q.optionImages?.[i]||'')}));
+   out.config.qs=(Array.isArray(out.config.qs)?out.config.qs:[emptyQuestion(out.game)]).map(q=>({
+    ...emptyQuestion(out.game),...q,
+    options:out.game==='truefalse'?['○ 正しい','× 間違い']:
+      Array.from({length:questionSize(out.game)},(_,i)=>String(q.options?.[i]||'')),
+    optionImages:Array.from({length:questionSize(out.game)},(_,i)=>q.optionImages?.[i]||''),
+    ...(out.game==='pairs'?{rightOptions:Array.from({length:4},(_,i)=>String(q.rightOptions?.[i]||''))}:{})
+   }));
    out.truth=Array.from({length:out.config.qs.length},(_,i)=>{
     const t=out.truth?.[i];
     if(out.game==='multi')return Array.isArray(t)?t.slice():[0,1];
-    if(out.game==='order')return Array.isArray(t)?t.slice():[0,1,2,3];
+    if(out.game==='order'||out.game==='pairs')return Array.isArray(t)?t.slice():[0,1,2,3];
+    if(out.game==='typing')return typeof t==='string'?t:'';
+    if(out.game==='number')return Number.isInteger(t)?t:50;
     return Number.isInteger(t)?t:0
    });
  }
@@ -92,6 +106,7 @@ function toggleMultiGuess(i,j){
  selected.sort((a,b)=>a-b);renderPlay()
 }
 function renderOneQuestion(i){const g=draft.game,t=draft,part=g==='tier'?t.config.rounds[i]:g==='soup'?t.config.puzzles[i]:t.config.qs[i],name=g==='tier'?'Tier表':g==='soup'?'謎':'問題';const ctrl=`<div class="question-actions">${bb('↑ 上へ',`moveQuestion(${i},-1)`,'secondary')}${bb('↓ 下へ',`moveQuestion(${i},1)`,'secondary')}${bb('複製',`duplicateQuestion(${i})`,'secondary')}${bb('削除',`removeQuestion(${i})`,'danger')}</div>`;
+ if(STUDIO_MORE.has(g))return moreEditor(i,part,ctrl);
  if(RANKED_ONLY.has(g))return extraQuestionEditor(i,part,ctrl);
  if(g==='tier')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>このTier表のお題</label><input class="field" value="${X(part.title)}" maxlength="100" placeholder="例：友達と行きたい場所" oninput="draft.config.rounds[${i}].title=this.value">${roundImg(i)}<div class="choicegrid">${part.items.map((val,j)=>`<div><label>候補 ${j+1}</label><input class="field" maxlength="80" value="${X(val)}" oninput="draft.config.rounds[${i}].items[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><h4>自分の答え（S → D）</h4>${tierRows(t.truth[i],part.items,'edit',i)}</div>`;
  if(g==='soup')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>問題文</label><textarea class="field" maxlength="1500" oninput="draft.config.puzzles[${i}].situation=this.value">${X(part.situation)}</textarea>${roundImg(i)}<label>真相（解説）</label><textarea class="field" maxlength="3000" oninput="draft.config.puzzles[${i}].solution=this.value">${X(part.solution)}</textarea>${part.hints.map((val,j)=>`<label>ヒント ${j+1}</label><input class="field" maxlength="300" value="${X(val)}" oninput="draft.config.puzzles[${i}].hints[${j}]=this.value">`).join('')}</div>`;
@@ -122,6 +137,10 @@ function verify(x){if(!x||!KIND[x.game]||!x.title?.trim())return '問題セッ�
  else{for(let i=0;i<g.config.qs.length;i++){
   const q=g.config.qs[i],answer=g.truth[i];
   if(!q.q.trim())return 'すべての問題文を入力してください';
+  if(STUDIO_MORE.has(g.game)){
+   const err=moreVerify(g,q,answer);if(err)return err;
+   continue
+  }
   if(g.game==='truefalse'){
    if(!Number.isInteger(answer)||answer<0||answer>1)return '○×の正解を決めてください';
    continue
@@ -163,8 +182,9 @@ function validChallenge(raw){
   if(g.game==='tier')return g.config.rounds.every((r,i)=>r.items.length===5&&g.truth[i].length===5);
   if(g.game==='soup')return g.config.puzzles.every(p=>typeof p.situation==='string'&&typeof p.solution==='string');
   return g.config.qs.every((q,i)=>{
-   if(typeof q.q!=='string'||!q.q.trim()||q.options.length!==questionSize(g.game))return false;
    const a=g.truth[i];
+   if(STUDIO_MORE.has(g.game))return moreValid(g,q,a);
+   if(typeof q.q!=='string'||!q.q.trim()||q.options.length!==questionSize(g.game))return false;
    if(g.game==='multi')return Array.isArray(a)&&a.length>=2&&a.length<=4&&
     a.every(n=>Number.isInteger(n)&&n>=0&&n<4)&&new Set(a).size===a.length;
    if(g.game==='order')return Array.isArray(a)&&a.length===4&&
@@ -176,6 +196,7 @@ function validChallenge(raw){
 function loadChallenge(raw){if(!validChallenge(raw))throw Error('この問題データは読み込めません');if(!isStudioPublished(raw.game))throw Error('このゲームは現在非公開です');play=normalized(raw);guesses=play.game==='tier'?play.config.rounds.map(()=>[0,1,2,3,4]):
   play.game==='order'?play.config.qs.map(()=>[0,1,2,3]):
   play.game==='multi'?play.config.qs.map(()=>[]):
+  STUDIO_MORE.has(play.game)?moreInitGuesses(play.game,play.config.qs):
   play.game==='soup'?[]:play.config.qs.map(()=>null);shownHints=[];notes=[];finished=false;tab='play';playIndex=0;render()}
 function startFromUrl(){const hash=location.hash;if(hash.startsWith('#rank=')){loadRankedLink(hash.slice(6));return true}if(hash.startsWith('#play=')){try{const c=N.unpack(hash.slice(6));loadChallenge(c)}catch(e){ui.innerHTML=section('リンクを開けませんでした',`<p>${X(e.message)}</p>${bb('ホームに戻る',"chooseTab('home')")}`)}return true}
  if(hash.startsWith('#share=')){const id=hash.slice(7);ui.innerHTML=section('問題を読み込み中','<p>画像つきの問題を取得しています…</p>');if(!/^[a-zA-Z0-9_-]{12,40}$/.test(id)){ui.innerHTML=section('読み込み失敗',`<p>リンクが正しくありません。</p>${bb('ホームへ',"chooseTab('home')")}`);return true}fetch('/api/challenges/'+encodeURIComponent(id)).then(async r=>{if(!r.ok)throw Error('問題が見つかりません（サーバー再起動で消えた可能性があります）');return r.json()}).then(v=>loadChallenge(v.data)).catch(e=>{ui.innerHTML=section('読み込み失敗',`<p>${X(e.message)}</p>${bb('ホームへ',"chooseTab('home')")}`)});return true}
@@ -186,6 +207,7 @@ function changeHint(){shownHints[playIndex]=Math.min(3,(shownHints[playIndex]||0
 function saveMemo(s){notes[playIndex]=s}
 function challengeScore(){
  if(!play||play.game==='soup')return null;
+ if(STUDIO_MORE.has(play.game))return moreScore(play,guesses);
  if(play.game==='tier'||play.game==='order')
   return guesses.reduce((score,a,i)=>score+a.filter((x,j)=>x===play.truth[i][j]).length,0);
  if(play.game==='multi')
@@ -193,14 +215,23 @@ function challengeScore(){
    a.every(x=>play.truth[i].includes(x))).length;
  return guesses.filter((x,i)=>x===play.truth[i]).length
 }
-function maximumScore(){return play.game==='tier'?countOf(play)*5:play.game==='order'?countOf(play)*4:countOf(play)}
-function finishChallenge(){if(play.game!=='soup'&&play.game!=='tier'&&guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');if(play.game==='multi'&&guesses.some(a=>a.length<2))
+function maximumScore(){return STUDIO_MORE.has(play.game)?moreMaximum(play.game,countOf(play)):
+play.game==='tier'?countOf(play)*5:play.game==='order'?countOf(play)*4:countOf(play)}
+function finishChallenge(){
+ if(STUDIO_MORE.has(play.game)&&!moreCheckGuesses(play.game,guesses,play.config.qs))
+  return alert('まだ回答していない問題、または重複するペアがあります。全問を確認してください');
+ if(!STUDIO_MORE.has(play.game)&&play.game!=='soup'&&play.game!=='tier'&&
+   guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');
+ if(play.game==='multi'&&guesses.some(a=>a.length<2))
   return alert('各問題で正解だと思うものを2個以上選んでください');
  if(rankedAttempt)return finishRanked();finished=true;const pts=challengeScore();N.remember({key:'solo_'+Date.now()+'_'+Math.random(),title:play.title,info:pts===null?'真相を確認':`正解 ${pts}/${maximumScore()}`,game:play.game});renderPlay()}
 async function copySoloScore(){const pts=challengeScore(),text=play.title+' に挑戦！\n結果：'+pts+'/'+maximumScore()+'点\nなかみくらべ。';try{await navigator.clipboard.writeText(text);alert('結果をコピーしました')}catch{prompt('この結果をコピーしてください',text)}}
 function renderPlay(){if(!play){ui.innerHTML=section('問題がありません',bb('ホーム',"chooseTab('home')"));return}const g=play.game,c=play.config,num=countOf(play),i=playIndex;let content='';
  if(g==='tier'){const q=c.rounds[i];content=`<h3>${X(q.title||play.title)}</h3>${imageHTML(q.image)}<div class="tier-play-images">${q.items.map((v,k)=>`<div>${imageHTML(q.itemImages?.[k],'候補 '+(k+1),'option-thumb')}<span>${X(v)}</span></div>`).join('')}</div><p class="muted">この人のS〜Dの並びを予想して矢印で並べ替えてください。</p>${tierRows(guesses[i],q.items,'play',i)}`}
  else if(g==='soup'){const q=c.puzzles[i];content=`<h3>なぜ？</h3>${imageHTML(q.image)}<p class="mystery-text">${X(q.situation)}</p>${(q.hints||[]).slice(0,shownHints[i]||0).map((h,j)=>`<div class="notice">ヒント${j+1}：${X(h||'（なし）')}</div>`).join('')}${!finished?bb('💡 ヒントを見る','changeHint()','secondary'):''}<label>推理メモ</label><textarea class="field" maxlength="1000" oninput="saveMemo(this.value)" placeholder="気づいたことを自由にメモ">${X(notes[i]||'')}</textarea>${finished?`<div class="result"><h3>真相</h3><p>${X(q.solution)}</p></div>`:''}`}
+ else if(STUDIO_MORE.has(g)){
+  content=morePlayQuestion(g,i,c.qs[i])
+ }
  else if(g==='multi'){
   const q=c.qs[i],selected=guesses[i],truth=play.truth[i];
   content=`<h3>${X(q.q)}</h3>${imageHTML(q.image)}

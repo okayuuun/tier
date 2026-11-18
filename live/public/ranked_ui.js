@@ -110,6 +110,9 @@ async function startRanked(){
   const hidden=data.game==='tier'?data.config.rounds.map(()=>[0,1,2,3,4]):
    data.game==='order'?data.config.qs.map(()=>[0,1,2,3]):
    data.game==='multi'?data.config.qs.map(()=>[0,1]):
+   data.game==='pairs'?data.config.qs.map(()=>[0,1,2,3]):
+   data.game==='typing'?data.config.qs.map(()=>'非公開'):
+   data.game==='number'?data.config.qs.map(q=>q.min):
    data.config.qs.map(()=>0);
   loadChallenge({...data,truth:hidden});
  }catch(e){alert('問題を開始できません：'+e.message)}

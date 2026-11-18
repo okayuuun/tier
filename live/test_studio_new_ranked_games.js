@@ -4,7 +4,7 @@
 // links accidentally appearing as unsupported real-time multiplayer games.
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm');
-const files=['ranked_ui.js','studio.js'];
+const files=['ranked_ui.js','studio_more_ranked.js','studio.js'];
 const ui={innerHTML:''},saved=[],messages=[],records=[];
 const ctx={
   console,JSON,Math,Date,Set,Number,Promise,Array,encodeURIComponent,
