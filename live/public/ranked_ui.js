@@ -108,6 +108,8 @@ async function startRanked(){
   // Dummy answers are never graded locally. The real key stays on the server
   // until after a valid submitted attempt.
   const hidden=data.game==='tier'?data.config.rounds.map(()=>[0,1,2,3,4]):
+   data.game==='order'?data.config.qs.map(()=>[0,1,2,3]):
+   data.game==='multi'?data.config.qs.map(()=>[0,1]):
    data.config.qs.map(()=>0);
   loadChallenge({...data,truth:hidden});
  }catch(e){alert('問題を開始できません：'+e.message)}
