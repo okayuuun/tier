@@ -51,7 +51,48 @@ function chooseGame(kind){if(!KIND[kind])return;if(!isStudioPublished(kind))retu
 function editGame(i){const g=N.games()[i];if(!g)return;initDraft(g.game,g);tab='make';render()}
 function blockImg(target,i,j=null){const src=target.image||'';const imageName=j===null?'問題の画像':'選択肢の画像';const attr=`${i},${j===null?'null':j}`;return `<details class="photo-control" ${src?'open':''}><summary class="photo-label">${src?'🖼️ 添付した画像を確認・変更':'＋ '+imageName+'を添付（任意）'}</summary>${imageHTML(src,imageName,'editor-image')}<div class="row"><label class="mini-upload">📷 写真を追加<input class="hidden" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadImage(event,${attr})"></label>${bb('画像URLを入力',`setImageURL(${attr})`,'secondary')}${src?bb('画像を外す',`removeImage(${attr})`,'secondary'):''}</div><small>画像は自動で縮小保存。公開画像のURLも使用できます。</small></details>`}
 function roundImg(i,j=null){const r=draft.game==='tier'?draft.config.rounds[i]:draft.game==='soup'?draft.config.puzzles[i]:draft.config.qs[i];return blockImg({image:j===null?r.image:(draft.game==='tier'?r.itemImages[j]:r.optionImages[j])},i,j)}
+function orderRows(order,options,mode,i){
+ return order.map((n,pos)=>`<div class="tierline"><span class="tierlabel">${pos+1}</span><span>${X(options[n]||'候補 '+(n+1))}</span>
+ ${mode==='correct'?'':`<button type="button" class="tiny" ${pos===0?'disabled':''} onclick="moveOrder('${mode}',${i},${pos},-1)">↑</button><button type="button" class="tiny" ${pos===order.length-1?'disabled':''} onclick="moveOrder('${mode}',${i},${pos},1)">↓</button>`}</div>`).join('')
+}
+function extraQuestionEditor(i,q,ctrl){
+ const g=draft.game,truth=draft.truth[i];
+ const head=`<div class="question" id="question-${i}"><h3>Q${i+1}</h3>${ctrl}
+ <label>問題文</label><textarea class="field question-text" maxlength="300"
+ oninput="draft.config.qs[${i}].q=this.value">${X(q.q)}</textarea>${roundImg(i)}`;
+ if(g==='truefalse')return head+`<p>答えが「○ 正しい」か「× 間違い」かを決めます。</p>
+ <label>正解</label><select class="field" onchange="draft.truth[${i}]=Number(this.value)">
+ <option value="0" ${truth===0?'selected':''}>○ 正しい</option>
+ <option value="1" ${truth===1?'selected':''}>× 間違い</option></select></div>`;
+ const fields=`<div class="choicegrid">${q.options.map((v,j)=>`<div class="choice-edit">
+ <label>候補 ${j+1}</label><input class="field" maxlength="160" value="${X(v)}"
+ oninput="draft.config.qs[${i}].options[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div>`;
+ if(g==='multi')return head+fields+`<h4>正しい選択肢を2個以上選んでください</h4>
+ <div class="choicegrid">${q.options.map((v,j)=>`<label class="multi-check">
+ <input type="checkbox" ${truth.includes(j)?'checked':''} onchange="toggleMultiTruth(${i},${j})">
+ <span>${'ABCD'[j]}. ${X(v||'候補'+(j+1))}</span></label>`).join('')}</div></div>`;
+ return head+fields+`<h4>正しい順番（上から1→4）</h4>
+ <p class="muted">↑↓ボタンで正解の並びを決めます。</p>
+ ${orderRows(truth,q.options,'edit',i)}</div>`
+}
+function toggleMultiTruth(i,j){
+ const current=draft.truth[i],p=current.indexOf(j);
+ if(p<0)current.push(j);else current.splice(p,1);
+ current.sort((a,b)=>a-b);renderMake()
+}
+function moveOrder(mode,i,pos,dx){
+ const target=mode==='edit'?draft?.truth[i]:guesses[i],next=pos+dx;
+ if(!Array.isArray(target)||next<0||next>=target.length)return;
+ [target[pos],target[next]]=[target[next],target[pos]];
+ if(mode==='edit')renderMake();else renderPlay()
+}
+function toggleMultiGuess(i,j){
+ const selected=guesses[i],p=selected.indexOf(j);
+ if(p<0)selected.push(j);else selected.splice(p,1);
+ selected.sort((a,b)=>a-b);renderPlay()
+}
 function renderOneQuestion(i){const g=draft.game,t=draft,part=g==='tier'?t.config.rounds[i]:g==='soup'?t.config.puzzles[i]:t.config.qs[i],name=g==='tier'?'Tier表':g==='soup'?'謎':'問題';const ctrl=`<div class="question-actions">${bb('↑ 上へ',`moveQuestion(${i},-1)`,'secondary')}${bb('↓ 下へ',`moveQuestion(${i},1)`,'secondary')}${bb('複製',`duplicateQuestion(${i})`,'secondary')}${bb('削除',`removeQuestion(${i})`,'danger')}</div>`;
+ if(RANKED_ONLY.has(g))return extraQuestionEditor(i,part,ctrl);
  if(g==='tier')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>このTier表のお題</label><input class="field" value="${X(part.title)}" maxlength="100" placeholder="例：友達と行きたい場所" oninput="draft.config.rounds[${i}].title=this.value">${roundImg(i)}<div class="choicegrid">${part.items.map((val,j)=>`<div><label>候補 ${j+1}</label><input class="field" maxlength="80" value="${X(val)}" oninput="draft.config.rounds[${i}].items[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><h4>自分の答え（S → D）</h4>${tierRows(t.truth[i],part.items,'edit',i)}</div>`;
  if(g==='soup')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>問題文</label><textarea class="field" maxlength="1500" oninput="draft.config.puzzles[${i}].situation=this.value">${X(part.situation)}</textarea>${roundImg(i)}<label>真相（解説）</label><textarea class="field" maxlength="3000" oninput="draft.config.puzzles[${i}].solution=this.value">${X(part.solution)}</textarea>${part.hints.map((val,j)=>`<label>ヒント ${j+1}</label><input class="field" maxlength="300" value="${X(val)}" oninput="draft.config.puzzles[${i}].hints[${j}]=this.value">`).join('')}</div>`;
  return `<div class="question" id="question-${i}"><h3>Q${i+1}</h3>${ctrl}<label>質問文</label><textarea class="field question-text" maxlength="300" oninput="draft.config.qs[${i}].q=this.value">${X(part.q)}</textarea>${roundImg(i)}<div class="choicegrid">${part.options.map((val,j)=>`<div class="choice-edit"><label>選択肢 ${'ABCD'[j]}</label><input class="field" maxlength="160" value="${X(val)}" oninput="draft.config.qs[${i}].options[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><div class="answerpick"><label>あなたの正解</label><select class="field" onchange="draft.truth[${i}]=Number(this.value)">${part.options.map((_,j)=>`<option value="${j}" ${t.truth[i]===j?'selected':''}>${'ABCD'[j]}</option>`).join('')}</select></div></div>`;
@@ -78,7 +119,22 @@ function moveTier(mode,index,i,dx){const a=mode==='edit'?draft?.truth[index]:gue
 function verify(x){if(!x||!KIND[x.game]||!x.title?.trim())return '問題セットのタイトルを入力してください';const g=normalized(x),total=countOf(g);if(total<1||total>MAX[g.game])return '問題数が範囲外です';if(g.game==='tier'){
  for(const r of g.config.rounds){if(!r.title.trim()||r.items.some(s=>!s.trim())||new Set(r.items.map(s=>s.trim())).size!==5)return 'Tier表ごとにお題と異なる5つの選択肢を入力してください';}
  }else if(g.game==='soup'){for(const p of g.config.puzzles){if(p.situation.trim().length<10||p.solution.trim().length<10)return 'ウミガメのスープは問題文と真相を10文字以上入力してください';}}
- else{for(const q of g.config.qs){if(!q.q.trim()||q.options.some(s=>!s.trim())||new Set(q.options.map(s=>s.trim())).size!==q.options.length)return 'すべての問題に質問と異なる選択肢を入力してください';}}
+ else{for(let i=0;i<g.config.qs.length;i++){
+  const q=g.config.qs[i],answer=g.truth[i];
+  if(!q.q.trim())return 'すべての問題文を入力してください';
+  if(g.game==='truefalse'){
+   if(!Number.isInteger(answer)||answer<0||answer>1)return '○×の正解を決めてください';
+   continue
+  }
+  if(q.options.some(x=>!x.trim())||new Set(q.options.map(x=>x.trim())).size!==q.options.length)
+   return 'すべての問題に異なる選択肢を入力してください';
+  if(g.game==='multi'&&(!Array.isArray(answer)||answer.length<2||answer.length>4||
+      new Set(answer).size!==answer.length||answer.some(x=>!Number.isInteger(x)||x<0||x>3)))
+   return '複数正解クイズでは、正解を2個以上選んでください';
+  if(g.game==='order'&&(!Array.isArray(answer)||answer.length!==4||
+      new Set(answer).size!==4||answer.some(x=>!Number.isInteger(x)||x<0||x>3)))
+   return '並べ替えの正しい順番を確認してください';
+ }}
  return ''}
 function saveDraft(){const errorText=verify(draft);if(errorText)return alert(errorText);const g=normalized(draft);g.title=g.title.trim();g.config.title=g.title;if(!N.saveGame(g))return alert('ブラウザの保存容量がいっぱいです。画像を減らすか、バックアップを保存してください');draft.id=N.games()[0].id;tab='library';renderLibrary();const note=document.getElementById('saved-notice');if(note)note.textContent='保存しました！「共有リンクをコピー」から友達へ送れます。'}
 function payloadFor(g){const c=normalized(g);return {v:2,game:c.game,title:c.title,config:c.config,truth:c.truth}}
