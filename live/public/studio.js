@@ -182,8 +182,9 @@ function validChallenge(raw){
   if(g.game==='tier')return g.config.rounds.every((r,i)=>r.items.length===5&&g.truth[i].length===5);
   if(g.game==='soup')return g.config.puzzles.every(p=>typeof p.situation==='string'&&typeof p.solution==='string');
   return g.config.qs.every((q,i)=>{
-   if(typeof q.q!=='string'||!q.q.trim()||q.options.length!==questionSize(g.game))return false;
    const a=g.truth[i];
+   if(STUDIO_MORE.has(g.game))return moreValid(g,q,a);
+   if(typeof q.q!=='string'||!q.q.trim()||q.options.length!==questionSize(g.game))return false;
    if(g.game==='multi')return Array.isArray(a)&&a.length>=2&&a.length<=4&&
     a.every(n=>Number.isInteger(n)&&n>=0&&n<4)&&new Set(a).size===a.length;
    if(g.game==='order')return Array.isArray(a)&&a.length===4&&
@@ -195,6 +196,7 @@ function validChallenge(raw){
 function loadChallenge(raw){if(!validChallenge(raw))throw Error('この問題データは読み込めません');if(!isStudioPublished(raw.game))throw Error('このゲームは現在非公開です');play=normalized(raw);guesses=play.game==='tier'?play.config.rounds.map(()=>[0,1,2,3,4]):
   play.game==='order'?play.config.qs.map(()=>[0,1,2,3]):
   play.game==='multi'?play.config.qs.map(()=>[]):
+  STUDIO_MORE.has(play.game)?moreInitGuesses(play.game,play.config.qs):
   play.game==='soup'?[]:play.config.qs.map(()=>null);shownHints=[];notes=[];finished=false;tab='play';playIndex=0;render()}
 function startFromUrl(){const hash=location.hash;if(hash.startsWith('#rank=')){loadRankedLink(hash.slice(6));return true}if(hash.startsWith('#play=')){try{const c=N.unpack(hash.slice(6));loadChallenge(c)}catch(e){ui.innerHTML=section('リンクを開けませんでした',`<p>${X(e.message)}</p>${bb('ホームに戻る',"chooseTab('home')")}`)}return true}
  if(hash.startsWith('#share=')){const id=hash.slice(7);ui.innerHTML=section('問題を読み込み中','<p>画像つきの問題を取得しています…</p>');if(!/^[a-zA-Z0-9_-]{12,40}$/.test(id)){ui.innerHTML=section('読み込み失敗',`<p>リンクが正しくありません。</p>${bb('ホームへ',"chooseTab('home')")}`);return true}fetch('/api/challenges/'+encodeURIComponent(id)).then(async r=>{if(!r.ok)throw Error('問題が見つかりません（サーバー再起動で消えた可能性があります）');return r.json()}).then(v=>loadChallenge(v.data)).catch(e=>{ui.innerHTML=section('読み込み失敗',`<p>${X(e.message)}</p>${bb('ホームへ',"chooseTab('home')")}`)});return true}
@@ -205,6 +207,7 @@ function changeHint(){shownHints[playIndex]=Math.min(3,(shownHints[playIndex]||0
 function saveMemo(s){notes[playIndex]=s}
 function challengeScore(){
  if(!play||play.game==='soup')return null;
+ if(STUDIO_MORE.has(play.game))return moreScore(play,guesses);
  if(play.game==='tier'||play.game==='order')
   return guesses.reduce((score,a,i)=>score+a.filter((x,j)=>x===play.truth[i][j]).length,0);
  if(play.game==='multi')
@@ -212,14 +215,23 @@ function challengeScore(){
    a.every(x=>play.truth[i].includes(x))).length;
  return guesses.filter((x,i)=>x===play.truth[i]).length
 }
-function maximumScore(){return play.game==='tier'?countOf(play)*5:play.game==='order'?countOf(play)*4:countOf(play)}
-function finishChallenge(){if(play.game!=='soup'&&play.game!=='tier'&&guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');if(play.game==='multi'&&guesses.some(a=>a.length<2))
+function maximumScore(){return STUDIO_MORE.has(play.game)?moreMaximum(play.game,countOf(play)):
+play.game==='tier'?countOf(play)*5:play.game==='order'?countOf(play)*4:countOf(play)}
+function finishChallenge(){
+ if(STUDIO_MORE.has(play.game)&&!moreCheckGuesses(play.game,guesses,play.config.qs))
+  return alert('まだ回答していない問題、または重複するペアがあります。全問を確認してください');
+ if(!STUDIO_MORE.has(play.game)&&play.game!=='soup'&&play.game!=='tier'&&
+   guesses.some(x=>x===null))return alert('未回答の問題があります。すべてに回答してください');
+ if(play.game==='multi'&&guesses.some(a=>a.length<2))
   return alert('各問題で正解だと思うものを2個以上選んでください');
  if(rankedAttempt)return finishRanked();finished=true;const pts=challengeScore();N.remember({key:'solo_'+Date.now()+'_'+Math.random(),title:play.title,info:pts===null?'真相を確認':`正解 ${pts}/${maximumScore()}`,game:play.game});renderPlay()}
 async function copySoloScore(){const pts=challengeScore(),text=play.title+' に挑戦！\n結果：'+pts+'/'+maximumScore()+'点\nなかみくらべ。';try{await navigator.clipboard.writeText(text);alert('結果をコピーしました')}catch{prompt('この結果をコピーしてください',text)}}
 function renderPlay(){if(!play){ui.innerHTML=section('問題がありません',bb('ホーム',"chooseTab('home')"));return}const g=play.game,c=play.config,num=countOf(play),i=playIndex;let content='';
  if(g==='tier'){const q=c.rounds[i];content=`<h3>${X(q.title||play.title)}</h3>${imageHTML(q.image)}<div class="tier-play-images">${q.items.map((v,k)=>`<div>${imageHTML(q.itemImages?.[k],'候補 '+(k+1),'option-thumb')}<span>${X(v)}</span></div>`).join('')}</div><p class="muted">この人のS〜Dの並びを予想して矢印で並べ替えてください。</p>${tierRows(guesses[i],q.items,'play',i)}`}
  else if(g==='soup'){const q=c.puzzles[i];content=`<h3>なぜ？</h3>${imageHTML(q.image)}<p class="mystery-text">${X(q.situation)}</p>${(q.hints||[]).slice(0,shownHints[i]||0).map((h,j)=>`<div class="notice">ヒント${j+1}：${X(h||'（なし）')}</div>`).join('')}${!finished?bb('💡 ヒントを見る','changeHint()','secondary'):''}<label>推理メモ</label><textarea class="field" maxlength="1000" oninput="saveMemo(this.value)" placeholder="気づいたことを自由にメモ">${X(notes[i]||'')}</textarea>${finished?`<div class="result"><h3>真相</h3><p>${X(q.solution)}</p></div>`:''}`}
+ else if(STUDIO_MORE.has(g)){
+  content=morePlayQuestion(g,i,c.qs[i])
+ }
  else if(g==='multi'){
   const q=c.qs[i],selected=guesses[i],truth=play.truth[i];
   content=`<h3>${X(q.q)}</h3>${imageHTML(q.image)}
