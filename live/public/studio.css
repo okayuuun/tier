@@ -16,3 +16,9 @@
 .multi-check input{width:21px;height:21px;accent-color:#d83491;flex:none}
 .multi-check span{flex:1;overflow-wrap:anywhere}
 .multi-check:has(input:checked){background:#ffe2f2;border-color:#e15ca8}
+
+/* Touch-sized matching rows and numerical quiz input. */
+.pair-editor-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(140px,1fr);gap:12px;align-items:center;background:#fff8fc;border:1px solid var(--line);padding:12px;margin:9px 0;border-radius:12px}
+.pair-editor-row strong{overflow-wrap:anywhere;font-size:14px}
+.pair-editor-row select{min-width:0}
+@media(max-width:520px){.pair-editor-row{grid-template-columns:1fr;gap:5px}.pair-editor-row select{width:100%}}
