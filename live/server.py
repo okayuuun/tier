@@ -980,6 +980,9 @@ app.add_routes([
     web.get('/echa.css', lambda request: web.FileResponse(ROOT / 'public' / 'echa.css')),
 ])
 app['master_admin'] = MASTER
+# Shared, scored Atelier challenges use the existing Neon pool when enabled.
+from ranked_challenges import register as register_ranked
+register_ranked(app)
 register_echa(app)
 MILLI.register(app)
 MASTER.register(app, ROOMS, broadcast)
