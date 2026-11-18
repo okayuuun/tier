@@ -424,7 +424,7 @@ async def submit(request):
     if not isinstance(data, dict):
         raise web.HTTPBadRequest(text="回答の形式が違います")
     record = await STORE.get(request.match_info["id"])
-    if not request.app["master_admin"].published(record["data"]["game"]):
+    if not is_published(request.app,record["data"]["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     result = await STORE.submit(request.match_info["id"], data.get("attempt"),
                                 data.get("name"), data.get("answers"))
@@ -433,7 +433,7 @@ async def submit(request):
 
 async def leaderboard(request):
     record = await STORE.get(request.match_info["id"])
-    if not request.app["master_admin"].published(record["data"]["game"]):
+    if not is_published(request.app,record["data"]["game"]):
         raise web.HTTPForbidden(text="このゲームは現在非公開です")
     result = await STORE.leaders(request.match_info["id"])
     return web.json_response({"rows": [dict((k,v) for k,v in row.items()
