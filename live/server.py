@@ -866,6 +866,10 @@ async def housekeep(app):
         if ROOM_STORE.enabled and now-last_prune>3600:
             try:
                 await ROOM_STORE.prune()
+                # Clean expired scored-link records and abandoned attempts
+                # without affecting game rooms or artwork.
+                from ranked_challenges import STORE as RANKED_STORE
+                await RANKED_STORE.prune()
                 last_prune=now
             except Exception:
                 LOGGER.exception("Pruning expired room snapshots failed")
