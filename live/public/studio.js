@@ -62,6 +62,24 @@ function render(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList
 function renderHome(){const p=N.profile();ui.innerHTML=section('どんな遊び方にする？',`<div class="grid"><div class="tile"><span class="badge">ONLINE · 2〜12人</span><strong>👥 みんなで遊ぶ</strong><p>ルームを作って、今までのゲームをリアルタイムで遊ぶ。</p><a class="btn primary" href="/" style="display:inline-block;text-decoration:none">ルームへ進む</a></div><div class="tile"><span class="badge">SOLO · ランキング付きリンク</span><strong>✏️ じぶんで問題を作る</strong><p>好きな問題数で作り、リンクを送って友達の結果をランキングで見られます。</p>${bb('ゲームを作る',"chooseTab('make')",'primary')}</div><div class="tile"><span class="badge">LIBRARY</span><strong>📚 作ったゲーム</strong><p>保存した問題はいつでも編集・共有・バックアップできます。</p>${bb('保存一覧',"chooseTab('library')")}</div><div class="tile"><span class="badge">NEW · SOLO</span><strong>🖼️ キャラクター・ミリしら</strong><p>アニメやゲームのキャラの性格や生死を自由に予想。画像付きで作って友達へ共有。</p><a class="btn primary" href="/milli" style="display:inline-block;text-decoration:none">ミリしらを作る</a></div><div class="tile"><span class="badge">PROFILE</span><strong>${N.avatarHTML(p,38)} ${X(p.name||'未設定')}</strong><p>名前やアイコン画像をこの端末に保存できます。</p>${bb('プロフィールを設定',"chooseTab('profile')")}</div></div>`,'自分の好きなものから始めよう。')}
 function initDraft(kind,existing){draft=existing?normalized(existing):{v:2,id:null,game:kind,title:'',config:kind==='tier'?{rounds:[emptyRound()]}:kind==='soup'?{puzzles:[emptyPuzzle()]}:{qs:[emptyQuestion(kind)]},truth:kind==='tier'?[[0,1,2,3,4]]:kind==='soup'?[]:[initialTruth(kind)]};activeEditor=0}
 function chooseGame(kind){if(!KIND[kind])return;if(!isStudioPublished(kind))return alert('このゲームは現在非公開です');initDraft(kind);tab='make';render()}
+function choosePreset(id){
+ const p=(typeof window==='undefined'?[]:(window.NAKAMI_PRESETS||[])).find(x=>x.id===id);
+ if(!p||!['either','value','quiz'].includes(p.game))return alert('このシートは現在選べません');
+ if(!isStudioPublished(p.game))return alert('この種類のゲームは現在非公開です');
+ if(draft&&!confirm('作成中の内容を破棄して、この質問シートを読み込みますか？'))return;
+ draft={v:2,id:null,game:p.game,title:p.title,
+   config:{qs:p.questions.map(([q,...options])=>({...emptyQuestion(p.game),q,options}))},
+   truth:p.questions.map(()=>-1)};
+ activeEditor=0;tab='make';render();
+}
+function recordPresetAnswer(i,v){
+ if(!draft||v==='')return;
+ const chosen=Number(v);
+ if(!Number.isInteger(chosen)||chosen<0||chosen>=draft.config.qs[i].options.length)return;
+ draft.truth[i]=chosen;
+ const el=document.getElementById('preset-progress');
+ if(el)el.textContent='あなたの回答：'+draft.truth.filter(x=>x>=0).length+'/'+draft.truth.length+'問';
+}
 function editGame(i){const g=N.games()[i];if(!g)return;initDraft(g.game,g);tab='make';render()}
 function blockImg(target,i,j=null){const src=target.image||'';const imageName=j===null?'問題の画像':'選択肢の画像';const attr=`${i},${j===null?'null':j}`;return `<details class="photo-control" ${src?'open':''}><summary class="photo-label">${src?'🖼️ 添付した画像を確認・変更':'＋ '+imageName+'を添付（任意）'}</summary>${imageHTML(src,imageName,'editor-image')}<div class="row"><label class="mini-upload">📷 写真を追加<input class="hidden" type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadImage(event,${attr})"></label>${bb('画像URLを入力',`setImageURL(${attr})`,'secondary')}${src?bb('画像を外す',`removeImage(${attr})`,'secondary'):''}</div><small>画像は自動で縮小保存。公開画像のURLも使用できます。</small></details>`}
 function roundImg(i,j=null){const r=draft.game==='tier'?draft.config.rounds[i]:draft.game==='soup'?draft.config.puzzles[i]:draft.config.qs[i];return blockImg({image:j===null?r.image:(draft.game==='tier'?r.itemImages[j]:r.optionImages[j])},i,j)}
@@ -110,12 +128,22 @@ function renderOneQuestion(i){const g=draft.game,t=draft,part=g==='tier'?t.confi
  if(RANKED_ONLY.has(g))return extraQuestionEditor(i,part,ctrl);
  if(g==='tier')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>このTier表のお題</label><input class="field" value="${X(part.title)}" maxlength="100" placeholder="例：友達と行きたい場所" oninput="draft.config.rounds[${i}].title=this.value">${roundImg(i)}<div class="choicegrid">${part.items.map((val,j)=>`<div><label>候補 ${j+1}</label><input class="field" maxlength="80" value="${X(val)}" oninput="draft.config.rounds[${i}].items[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><h4>自分の答え（S → D）</h4>${tierRows(t.truth[i],part.items,'edit',i)}</div>`;
  if(g==='soup')return `<div class="question" id="question-${i}"><h3>${name} ${i+1}</h3>${ctrl}<label>問題文</label><textarea class="field" maxlength="1500" oninput="draft.config.puzzles[${i}].situation=this.value">${X(part.situation)}</textarea>${roundImg(i)}<label>真相（解説）</label><textarea class="field" maxlength="3000" oninput="draft.config.puzzles[${i}].solution=this.value">${X(part.solution)}</textarea>${part.hints.map((val,j)=>`<label>ヒント ${j+1}</label><input class="field" maxlength="300" value="${X(val)}" oninput="draft.config.puzzles[${i}].hints[${j}]=this.value">`).join('')}</div>`;
- return `<div class="question" id="question-${i}"><h3>Q${i+1}</h3>${ctrl}<label>質問文</label><textarea class="field question-text" maxlength="300" oninput="draft.config.qs[${i}].q=this.value">${X(part.q)}</textarea>${roundImg(i)}<div class="choicegrid">${part.options.map((val,j)=>`<div class="choice-edit"><label>選択肢 ${'ABCD'[j]}</label><input class="field" maxlength="160" value="${X(val)}" oninput="draft.config.qs[${i}].options[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><div class="answerpick"><label>あなたの正解</label><select class="field" onchange="draft.truth[${i}]=Number(this.value)">${part.options.map((_,j)=>`<option value="${j}" ${t.truth[i]===j?'selected':''}>${'ABCD'[j]}</option>`).join('')}</select></div></div>`;
+ return `<div class="question" id="question-${i}"><h3>Q${i+1}</h3>${ctrl}<label>質問文</label><textarea class="field question-text" maxlength="300" oninput="draft.config.qs[${i}].q=this.value">${X(part.q)}</textarea>${roundImg(i)}<div class="choicegrid">${part.options.map((val,j)=>`<div class="choice-edit"><label>選択肢 ${'ABCD'[j]}</label><input class="field" maxlength="160" value="${X(val)}" oninput="draft.config.qs[${i}].options[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><div class="answerpick"><label>あなたの正解</label><select class="field" onchange="recordPresetAnswer(${i},this.value)">${t.truth[i]<0?'<option value="" selected disabled>先にあなたの回答を選んでください</option>':''}${part.options.map((_,j)=>`<option value="${j}" ${t.truth[i]===j?'selected':''}>${'ABCD'[j]}</option>`).join('')}</select></div></div>`;
 }
-function renderMake(){const tiles=`<div class="grid">${Object.entries(KIND).filter(([g])=>isStudioPublished(g)).map(([k,[e,title,desc]])=>`<div class="tile"><strong>${e} ${X(title)}</strong><p>${X(desc)}</p>${bb('これを作る',`chooseGame('${k}')`,'primary')}</div>`).join('')}</div>`;if(!draft){ui.innerHTML=section('作るゲームを選ぶ',tiles,'問題数・文章・画像を自由に設定できます。');return}
+function renderMake(){const tiles=`<div class="grid">${Object.entries(KIND).filter(([g])=>isStudioPublished(g)).map(([k,[e,title,desc]])=>`<div class="tile"><strong>${e} ${X(title)}</strong><p>${X(desc)}</p>${bb('これを作る',`chooseGame('${k}')`,'primary')}</div>`).join('')}</div>`;if(!draft){
+ const presets=(typeof window==='undefined'?[]:(window.NAKAMI_PRESETS||[])).filter(p=>isStudioPublished(p.game));
+ const cards=presets.map(p=>`<div class="tile"><strong>${X(p.icon)} ${X(p.title)}</strong><p>${X(p.desc)}</p><span class="badge">${p.questions.length}問 · ${p.game==='value'?'3択':'2択'}</span><div style="margin-top:12px">${bb('このシートで作る',`choosePreset('${p.id}')`,'primary')}</div></div>`).join('');
+ ui.innerHTML=section('🪞 回答を当ててもらう質問シート',
+   '<div class="notice">① シートを選ぶ → ② あなた自身の答えをすべて選ぶ → ③ 保存してリンクを友達へ送る。友達があなたの答えを予想します。恋愛観は日常や友情の質問に自然に混ぜています。</div><div class="grid">'+cards+'</div>',
+   '最初から問題文を用意したテンプレート。質問は後で自由に編集できます。')+
+   section('一から問題を作る',tiles,'今までどおり自分で文章や選択肢を作れます。');
+ return;
+}
  const t=draft,g=t.game,total=countOf(t);const name=`<label for="game-title">問題セットのタイトル</label><input id="game-title" class="field" maxlength="100" value="${X(t.title)}" placeholder="例：私についてどれだけ知ってる？" oninput="draft.title=this.value">`;
+ const progress=(['either','value','quiz'].includes(g)&&t.truth.some(x=>x<0))?
+   `<div class="notice" id="preset-progress">あなたの回答：${t.truth.filter(x=>x>=0).length}/${t.truth.length}問</div>`:'';
  const questionNav=`<div class="editor-toolbar"><strong>${total} ${g==='tier'?'お題':g==='soup'?'問':'問'} / 最大${MAX[g]}問</strong><div class="row">${bb('＋ 問題を追加','addQuestion()','primary')}${bb('問題一覧',`document.getElementById('question-nav').scrollIntoView({behavior:'smooth'})`,'secondary')}</div></div><div class="question-nav" id="question-nav">${Array.from({length:total},(_,i)=>bb(`${i+1}`,`showQuestion(${i})`,i===activeEditor?'primary':'secondary')).join('')}</div>`;
- ui.innerHTML=section(`${KIND[g][0]} ${KIND[g][1]} の問題を作る`,name+questionNav+renderOneQuestion(activeEditor)+`<div class="row" style="margin-top:20px">${bb('＋ 次の問題を追加','addQuestion()','secondary')}${bb('保存して共有する','saveDraft()','primary')}${bb('戻る',"chooseTab('home')")}</div><p class="muted">作成した問題と画像はこのブラウザに保存。保存後も編集・バックアップできます。画像つきの共有リンクは、サーバー再起動で無効になる場合があります。</p>`,'基本ルールや元ネタの名前は変えず、お題・問題数・画像を自分でカスタマイズできます。');
+ ui.innerHTML=section(`${KIND[g][0]} ${KIND[g][1]} の問題を作る`,name+progress+questionNav+renderOneQuestion(activeEditor)+`<div class="row" style="margin-top:20px">${bb('＋ 次の問題を追加','addQuestion()','secondary')}${bb('保存して共有する','saveDraft()','primary')}${bb('戻る',"chooseTab('home')")}</div><p class="muted">作成した問題と画像はこのブラウザに保存。保存後も編集・バックアップできます。画像つきの共有リンクは、サーバー再起動で無効になる場合があります。</p>`,'基本ルールや元ネタの名前は変えず、お題・問題数・画像を自分でカスタマイズできます。');
 }
 function showQuestion(i){activeEditor=Math.max(0,Math.min(countOf(draft)-1,i));renderMake();document.getElementById('question-nav')?.scrollIntoView({behavior:'smooth',block:'start'})}
 function addQuestion(){const g=draft.game,arr=g==='tier'?draft.config.rounds:g==='soup'?draft.config.puzzles:draft.config.qs;if(arr.length>=MAX[g])return alert('この形式の上限は'+MAX[g]+'問です');arr.push(g==='tier'?emptyRound():g==='soup'?emptyPuzzle():emptyQuestion(g));if(g==='tier')draft.truth.push([0,1,2,3,4]);else if(g!=='soup')draft.truth.push(initialTruth(g));showQuestion(arr.length-1)}
@@ -147,6 +175,7 @@ function verify(x){if(!x||!KIND[x.game]||!x.title?.trim())return '問題セッ�
   }
   if(q.options.some(x=>!x.trim())||new Set(q.options.map(x=>x.trim())).size!==q.options.length)
    return 'すべての問題に異なる選択肢を入力してください';
+  if(['quiz','either','value'].includes(g.game)&&(!Number.isInteger(answer)||answer<0||answer>=q.options.length))return '第'+(i+1)+'問の回答を選んでください';
   if(g.game==='multi'&&(!Array.isArray(answer)||answer.length<2||answer.length>4||
       new Set(answer).size!==answer.length||answer.some(x=>!Number.isInteger(x)||x<0||x>3)))
    return '複数正解クイズでは、正解を2個以上選んでください';
@@ -155,7 +184,7 @@ function verify(x){if(!x||!KIND[x.game]||!x.title?.trim())return '問題セッ�
    return '並べ替えの正しい順番を確認してください';
  }}
  return ''}
-function saveDraft(){const errorText=verify(draft);if(errorText)return alert(errorText);const g=normalized(draft);g.title=g.title.trim();g.config.title=g.title;if(!N.saveGame(g))return alert('ブラウザの保存容量がいっぱいです。画像を減らすか、バックアップを保存してください');draft.id=N.games()[0].id;tab='library';renderLibrary();const note=document.getElementById('saved-notice');if(note)note.textContent=RANKED_ONLY.has(g.game)?'保存しました！「🏆 ランキング付きリンクを作る」から友達へ送れます。':'保存しました！「共有リンクをコピー」から友達へ送れます。'}
+function saveDraft(){const unfinished=draft?.truth?.findIndex(x=>x===-1)??-1;if(unfinished>=0){alert('先にあなたの回答をすべて選んでください（未回答：第'+(unfinished+1)+'問）');showQuestion(unfinished);return}const errorText=verify(draft);if(errorText)return alert(errorText);const g=normalized(draft);g.title=g.title.trim();g.config.title=g.title;if(!N.saveGame(g))return alert('ブラウザの保存容量がいっぱいです。画像を減らすか、バックアップを保存してください');draft.id=N.games()[0].id;tab='library';renderLibrary();const note=document.getElementById('saved-notice');if(note)note.textContent=RANKED_ONLY.has(g.game)?'保存しました！「🏆 ランキング付きリンクを作る」から友達へ送れます。':'保存しました！「共有リンクをコピー」から友達へ送れます。'}
 function payloadFor(g){const c=normalized(g);return {v:2,game:c.game,title:c.title,config:c.config,truth:c.truth}}
 function embeddedLink(g){return location.origin+'/studio#play='+N.pack(payloadFor(g))}
 async function shareGame(g){const local=embeddedLink(g);if(local.length<=7300)return {url:local,short:false};const c=payloadFor(g),raw=JSON.stringify(c);if(raw.length>650000)throw Error('画像が多すぎます。画像を減らすか、JSONバックアップで共有してください');const resp=await fetch('/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},body:raw});if(!resp.ok)throw Error('共有リンクの作成に失敗しました（'+resp.status+'）');const data=await resp.json();return {url:location.origin+'/studio#share='+data.id,short:true}}
