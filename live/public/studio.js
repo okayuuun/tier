@@ -132,9 +132,9 @@ function renderOneQuestion(i){const g=draft.game,t=draft,part=g==='tier'?t.confi
 }
 function renderMake(){const tiles=`<div class="grid">${Object.entries(KIND).filter(([g])=>isStudioPublished(g)).map(([k,[e,title,desc]])=>`<div class="tile"><strong>${e} ${X(title)}</strong><p>${X(desc)}</p>${bb('これを作る',`chooseGame('${k}')`,'primary')}</div>`).join('')}</div>`;if(!draft){
  const presets=(typeof window==='undefined'?[]:(window.NAKAMI_PRESETS||[])).filter(p=>isStudioPublished(p.game));
- const cards=presets.map(p=>`<div class="tile"><strong>${X(p.icon)} ${X(p.title)}</strong><p>${X(p.desc)}</p><span class="badge">${p.questions.length}問 · ${p.game==='value'?'3択':'2択'}</span><div style="margin-top:12px">${bb('このシートで作る',`choosePreset('${p.id}')`,'primary')}</div></div>`).join('');
+ const cards=presets.map(p=>`<div class="tile"><strong>${X(p.icon)} ${X(p.title)}</strong>${p.desc?`<p>${X(p.desc)}</p>`:''}<span class="badge">${p.questions.length}問 · ${p.game==='value'?'3択':'2択'}</span><div style="margin-top:12px">${bb('このシートで作る',`choosePreset('${p.id}')`,'primary')}</div></div>`).join('');
  ui.innerHTML=section('🪞 回答を当ててもらう質問シート',
-   '<div class="notice">① シートを選ぶ → ② あなた自身の答えをすべて選ぶ → ③ 保存してリンクを友達へ送る。友達があなたの答えを予想します。恋愛観は日常や友情の質問に自然に混ぜています。</div><div class="grid">'+cards+'</div>',
+   '<div class="notice">① シートを選ぶ → ② あなた自身の答えをすべて選ぶ → ③ 保存してリンクを友達へ送る。友達があなたの答えを予想します。</div><div class="grid">'+cards+'</div>',
    '最初から問題文を用意したテンプレート。質問は後で自由に編集できます。')+
    section('一から問題を作る',tiles,'今までどおり自分で文章や選択肢を作れます。');
  return;
