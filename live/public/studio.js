@@ -63,7 +63,7 @@ function renderHome(){const p=N.profile();ui.innerHTML=section('どんな遊び�
 function initDraft(kind,existing){draft=existing?normalized(existing):{v:2,id:null,game:kind,title:'',config:kind==='tier'?{rounds:[emptyRound()]}:kind==='soup'?{puzzles:[emptyPuzzle()]}:{qs:[emptyQuestion(kind)]},truth:kind==='tier'?[[0,1,2,3,4]]:kind==='soup'?[]:[initialTruth(kind)]};activeEditor=0}
 function chooseGame(kind){if(!KIND[kind])return;if(!isStudioPublished(kind))return alert('このゲームは現在非公開です');initDraft(kind);tab='make';render()}
 function choosePreset(id){
- const p=(window.NAKAMI_PRESETS||[]).find(x=>x.id===id);
+ const p=(typeof window==='undefined'?[]:(window.NAKAMI_PRESETS||[])).find(x=>x.id===id);
  if(!p||!['either','value','quiz'].includes(p.game))return alert('このシートは現在選べません');
  if(!isStudioPublished(p.game))return alert('この種類のゲームは現在非公開です');
  if(draft&&!confirm('作成中の内容を破棄して、この質問シートを読み込みますか？'))return;
@@ -131,7 +131,7 @@ function renderOneQuestion(i){const g=draft.game,t=draft,part=g==='tier'?t.confi
  return `<div class="question" id="question-${i}"><h3>Q${i+1}</h3>${ctrl}<label>質問文</label><textarea class="field question-text" maxlength="300" oninput="draft.config.qs[${i}].q=this.value">${X(part.q)}</textarea>${roundImg(i)}<div class="choicegrid">${part.options.map((val,j)=>`<div class="choice-edit"><label>選択肢 ${'ABCD'[j]}</label><input class="field" maxlength="160" value="${X(val)}" oninput="draft.config.qs[${i}].options[${j}]=this.value">${roundImg(i,j)}</div>`).join('')}</div><div class="answerpick"><label>あなたの正解</label><select class="field" onchange="recordPresetAnswer(${i},this.value)">${t.truth[i]<0?'<option value="" selected disabled>先にあなたの回答を選んでください</option>':''}${part.options.map((_,j)=>`<option value="${j}" ${t.truth[i]===j?'selected':''}>${'ABCD'[j]}</option>`).join('')}</select></div></div>`;
 }
 function renderMake(){const tiles=`<div class="grid">${Object.entries(KIND).filter(([g])=>isStudioPublished(g)).map(([k,[e,title,desc]])=>`<div class="tile"><strong>${e} ${X(title)}</strong><p>${X(desc)}</p>${bb('これを作る',`chooseGame('${k}')`,'primary')}</div>`).join('')}</div>`;if(!draft){
- const presets=(window.NAKAMI_PRESETS||[]).filter(p=>isStudioPublished(p.game));
+ const presets=(typeof window==='undefined'?[]:(window.NAKAMI_PRESETS||[])).filter(p=>isStudioPublished(p.game));
  const cards=presets.map(p=>`<div class="tile"><strong>${X(p.icon)} ${X(p.title)}</strong><p>${X(p.desc)}</p><span class="badge">${p.questions.length}問 · ${p.game==='value'?'3択':'2択'}</span><div style="margin-top:12px">${bb('このシートで作る',`choosePreset('${p.id}')`,'primary')}</div></div>`).join('');
  ui.innerHTML=section('🪞 回答を当ててもらう質問シート',
    '<div class="notice">① シートを選ぶ → ② あなた自身の答えをすべて選ぶ → ③ 保存してリンクを友達へ送る。友達があなたの答えを予想します。恋愛観は日常や友情の質問に自然に混ぜています。</div><div class="grid">'+cards+'</div>',
