@@ -604,8 +604,8 @@ window.NAKAMI_PRESETS = [
     "id": "mixed",
     "game": "either",
     "icon": "🪞",
-    "title": "私の本音、どっちだと思う？",
-    "desc": "日常・友情・距離感に、恋愛観にもつながる質問を自然にミックス。",
+    "title": "私の２択",
+    "desc": "",
     "questions": [
       [
         "休日はどっちが理想？",
